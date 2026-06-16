@@ -9,9 +9,9 @@ const parser = new Parser();
 const CHAT_ID = process.env.CHAT_ID;
 
 const FEEDS = {
-  markets: 'https://feeds.reuters.com/reuters/businessNews',
-  world: 'https://feeds.reuters.com/Reuters/worldNews',
-  technology: 'https://feeds.reuters.com/reuters/technologyNews',
+  markets: 'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines',
+  world: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
+  technology: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml',
 };
 
 async function fetchReutersNews(category = 'markets') {
