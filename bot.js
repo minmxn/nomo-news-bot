@@ -9,82 +9,53 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const BOT_USERNAME = process.env.BOT_USERNAME;
 
-// Fetch news by category
+// ─── NEWS FETCHING ───────────────────────────────────────────────
+
 async function fetchNews(category, pageSize = 10) {
   const queries = {
     markets: 'stock market OR financial markets OR S&P500 OR nasdaq OR dow jones',
     world: 'geopolitics OR international relations OR war OR diplomacy OR sanctions',
     technology: 'artificial intelligence OR technology OR semiconductor OR cybersecurity',
   };
-
   const response = await axios.get('https://newsapi.org/v2/everything', {
-    params: {
-      q: queries[category],
-      language: 'en',
-      sortBy: 'publishedAt',
-      pageSize,
-      apiKey: NEWS_API_KEY,
-    }
+    params: { q: queries[category], language: 'en', sortBy: 'publishedAt', pageSize, apiKey: NEWS_API_KEY }
   });
-
   return response.data.articles;
 }
 
-// Fetch news by keyword
 async function fetchNewsByKeyword(keyword, pageSize = 5) {
   const response = await axios.get('https://newsapi.org/v2/everything', {
-    params: {
-      q: keyword,
-      language: 'en',
-      sortBy: 'publishedAt',
-      pageSize,
-      apiKey: NEWS_API_KEY,
-    }
+    params: { q: keyword, language: 'en', sortBy: 'publishedAt', pageSize, apiKey: NEWS_API_KEY }
   });
   return response.data.articles;
 }
 
-// Fetch news by country
 async function fetchNewsByCountry(country, pageSize = 5) {
   const response = await axios.get('https://newsapi.org/v2/top-headlines', {
-    params: {
-      country,
-      pageSize,
-      apiKey: NEWS_API_KEY,
-    }
+    params: { country, pageSize, apiKey: NEWS_API_KEY }
   });
   return response.data.articles;
 }
 
-// Ask Groq AI
+// ─── GROQ AI ─────────────────────────────────────────────────────
+
 async function askGroq(question, newsContext = '') {
   const prompt = `You are a witty, friendly financial and geopolitical news analyst built by the almighty Min.
 You explain complex news in plain simple English that anyone can understand.
 Keep answers concise, clear and occasionally add a light humorous remark.
-
-${newsContext ? `Latest news context:\n${newsContext}\n\n` : ''}
-
+${newsContext ? `\nLatest news context:\n${newsContext}\n` : ''}
 Question: ${question}`;
 
   const response = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
-    {
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1000,
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
+    { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 1000 },
+    { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
   );
-
   return response.data.choices[0].message.content;
 }
 
-// Format news articles
+// ─── HELPERS ─────────────────────────────────────────────────────
+
 function formatNews(articles, label) {
   if (!articles || articles.length === 0) return 'No news found right now. Try again later!';
   const body = articles.map((a, i) =>
@@ -93,7 +64,6 @@ function formatNews(articles, label) {
   return `📰 *${label}*\n\n${body}`;
 }
 
-// Check if bot should respond in group
 function shouldRespond(msg) {
   const isPrivate = msg.chat.type === 'private';
   const isMentioned = msg.text && msg.text.includes(`@${BOT_USERNAME}`);
@@ -101,25 +71,149 @@ function shouldRespond(msg) {
   return isPrivate || isMentioned || isReply;
 }
 
-// Clean bot mention from message
 function cleanMessage(text) {
   return text.replace(`@${BOT_USERNAME}`, '').trim();
 }
 
-// Keyboard layout
+// ─── KEYBOARD ────────────────────────────────────────────────────
+
 const mainKeyboard = {
   keyboard: [
     [{ text: '📈 Markets' }, { text: '🌍 World' }],
     [{ text: '💻 Tech' }, { text: '☀️ Briefing' }],
     [{ text: '😎 Mood' }, { text: '🔍 Search' }],
     [{ text: '🌏 Singapore' }, { text: '🇺🇸 US' }, { text: '🇨🇳 China' }],
-    [{ text: '📊 Stock' }],
+    [{ text: '📊 Stock' }, { text: '📅 Schedule' }],
   ],
   resize_keyboard: true,
   persistent: true
 };
 
-// Start command
+// ─── DAILY POLLS ─────────────────────────────────────────────────
+
+const dailyPolls = {
+  1: { // Monday
+    question: '🗳️ *Monday Market Pulse*\n\nHow are you feeling about markets this week?',
+    options: ['📈 Bullish — expecting gains', '📉 Bearish — expecting drops', '😐 Neutral — nothing exciting', '🤷 Not sure yet', '👀 Here to observe and learn']
+  },
+  2: { // Tuesday
+    question: '🗳️ *Sector Spotlight*\n\nWhich sector do you think performs best this week?',
+    options: ['💻 Technology', '🏦 Banking and Finance', '🛢️ Oil and Energy', '🏥 Healthcare', '🤷 Too hard to call']
+  },
+  3: { // Wednesday
+    question: '🗳️ *Mid Week Check*\n\nHow are markets performing vs your expectation?',
+    options: ['🚀 Better than expected', '😅 Worse than expected', '😐 Pretty much as expected', '🤷 Will check on Friday']
+  },
+  4: { // Thursday
+    question: '🗳️ *Biggest Market Risk Right Now*\n\nWhat do you think is the biggest threat to markets?',
+    options: ['🇺🇸 US recession fears', '🇨🇳 China slowdown', '💸 Inflation returning', '⚔️ Geopolitical tensions', '🤷 Honestly all of the above']
+  },
+  5: { // Friday
+    question: '🗳️ *Friday Verdict*\n\nHow did markets perform vs your prediction this week?',
+    options: ['🎯 Called it perfectly', '😅 Surprised me completely', '💀 Nobody saw that coming', '🤷 I only check on Fridays', '👀 Setting up for next week']
+  },
+  6: { // Saturday
+    question: '🗳️ *Weekend Read*\n\nWhat topic do you want more coverage on?',
+    options: ['📈 Stock market deep dives', '🌍 Geopolitics and market impact', '💰 Crypto and digital assets', '🏦 Central banks and interest rates', '🌏 Asia and Singapore markets']
+  },
+  0: { // Sunday
+    question: '🗳️ *Sunday Prediction Corner*\n\nYour call for next week — S&P 500?',
+    options: ['📈 Up more than 1%', '📈 Up less than 1%', '😐 Flat', '📉 Down less than 1%', '📉 Down more than 1%', '🤷 Markets are unpredictable']
+  }
+};
+
+// ─── WEEKLY BIG QUESTIONS ─────────────────────────────────────────
+
+const weeklyQuestions = [
+  '💬 *Weekly Big Question*\n\nIs the US dollar losing its dominance as the world reserve currency? Drop your thoughts below!',
+  '💬 *Weekly Big Question*\n\nWill AI stocks keep outperforming the broader market in 2026? Agree or disagree?',
+  '💬 *Weekly Big Question*\n\nIs a global recession coming in the next 12 months? What is your read?',
+  '💬 *Weekly Big Question*\n\nAre interest rates going to stay higher for longer? How is it affecting you?',
+  '💬 *Weekly Big Question*\n\nIs China a good investment opportunity right now? Bullish or bearish?',
+  '💬 *Weekly Big Question*\n\nWill crypto become a mainstream asset class in the next 5 years?',
+  '💬 *Weekly Big Question*\n\nIs Singapore\'s economy resilient enough to weather a global slowdown?',
+  '💬 *Weekly Big Question*\n\nWith AI disrupting industries — which sector do you think is most at risk?',
+];
+
+// ─── MCQ QUESTIONS ────────────────────────────────────────────────
+
+const mcqQuestions = [
+  {
+    level: '🟢 Easy',
+    question: 'What does the S&P 500 track?',
+    options: ['A — Top 500 US companies by market cap', 'B — Top 500 global companies', 'C — Top 500 tech companies only', 'D — No idea, just here for the memes'],
+    answer: 'A',
+    explanation: 'The S&P 500 tracks the 500 largest publicly traded companies in the US by market capitalisation. It is the most widely followed benchmark for the US stock market.'
+  },
+  {
+    level: '🟡 Medium',
+    question: 'When the Fed raises interest rates, what typically happens to bond prices?',
+    options: ['A — They go up', 'B — They go down', 'C — They stay the same', 'D — What is a bond?'],
+    answer: 'B',
+    explanation: 'When interest rates rise, existing bond prices fall. This is because new bonds are issued at higher rates making older lower-rate bonds less attractive to investors.'
+  },
+  {
+    level: '🔴 Hard',
+    question: 'What does a yield curve inversion typically signal?',
+    options: ['A — Strong economic growth ahead', 'B — Potential recession ahead', 'C — High inflation incoming', 'D — Time to Google this'],
+    answer: 'B',
+    explanation: 'A yield curve inversion happens when short-term bond yields exceed long-term yields. Historically this has been one of the most reliable indicators of a coming recession.'
+  },
+  {
+    level: '🟢 Easy',
+    question: 'What does GDP stand for?',
+    options: ['A — Global Development Plan', 'B — Gross Domestic Product', 'C — General Dollar Price', 'D — I know this one... maybe'],
+    answer: 'B',
+    explanation: 'GDP stands for Gross Domestic Product. It measures the total value of all goods and services produced in a country over a specific period and is the primary measure of economic health.'
+  },
+  {
+    level: '🟡 Medium',
+    question: 'What does CPI measure?',
+    options: ['A — Corporate Profit Index', 'B — Consumer Price Index — tracks inflation', 'C — Central Policy Interest rate', 'D — No clue'],
+    answer: 'B',
+    explanation: 'CPI stands for Consumer Price Index. It tracks the average change in prices paid by consumers for goods and services over time. Central banks use it to measure inflation.'
+  },
+  {
+    level: '🔴 Hard',
+    question: 'What is quantitative easing?',
+    options: ['A — A central bank selling bonds to reduce money supply', 'B — A central bank buying bonds to inject money into the economy', 'C — A government raising taxes to control inflation', 'D — A way to make economics easier to understand'],
+    answer: 'B',
+    explanation: 'Quantitative easing is when a central bank purchases government bonds and other assets to inject money directly into the economy. It is used to stimulate growth when interest rates are already near zero.'
+  },
+  {
+    level: '🟢 Easy',
+    question: 'What does a bear market mean?',
+    options: ['A — Markets are rising strongly', 'B — Markets have fallen 20% or more from recent highs', 'C — A market dominated by animal stocks', 'D — When traders are in a bad mood'],
+    answer: 'B',
+    explanation: 'A bear market is defined as a decline of 20% or more from recent highs in a market index. It typically reflects widespread pessimism and negative investor sentiment.'
+  },
+  {
+    level: '🟡 Medium',
+    question: 'What is the main purpose of the Federal Reserve?',
+    options: ['A — To print money for the US government', 'B — To manage monetary policy and maintain economic stability', 'C — To regulate Wall Street banks only', 'D — To decide stock prices'],
+    answer: 'B',
+    explanation: 'The Federal Reserve is the central bank of the United States. Its main goals are to promote maximum employment, stable prices and moderate long-term interest rates through monetary policy.'
+  },
+];
+
+let currentMCQIndex = 0;
+let currentMCQ = null;
+
+// ─── SCHEDULE COMMAND ─────────────────────────────────────────────
+
+const scheduleText =
+  `📅 *The Almighty News Bot — Daily Schedule* 🇸🇬 SGT\n\n` +
+  `☀️ *8:00am* — Morning Briefing — AI summary of overnight news\n` +
+  `🗳️ *9:00am* — Daily Poll — market sentiment question\n` +
+  `🧠 *10:00am* — Daily MCQ Quiz — test your market knowledge\n` +
+  `✅ *11:00am* — MCQ Answer Revealed — with full explanation\n` +
+  `🌆 *6:00pm* — Evening News Update — top 15 news of the day\n` +
+  `🔔 *Every Hour* — Hourly News Update — top 15 latest headlines\n\n` +
+  `_All times are Singapore Time GMT+8_ 🇸🇬\n\n` +
+  `_Brought to you by the almighty Min_ 🙏⚡`;
+
+// ─── COMMANDS ────────────────────────────────────────────────────
+
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id,
     `👋 Hey welcome to *The Almighty News Bot!*\n\n` +
@@ -130,7 +224,10 @@ bot.onText(/\/start/, (msg) => {
   );
 });
 
-// Markets
+bot.onText(/\/schedule|📅 Schedule/, (msg) => {
+  bot.sendMessage(msg.chat.id, scheduleText, { parse_mode: 'Markdown' });
+});
+
 bot.onText(/\/markets|📈 Markets/, async (msg) => {
   bot.sendMessage(msg.chat.id, '📈 Pulling the latest market news...');
   try {
@@ -141,7 +238,6 @@ bot.onText(/\/markets|📈 Markets/, async (msg) => {
   }
 });
 
-// World
 bot.onText(/\/world|🌍 World/, async (msg) => {
   bot.sendMessage(msg.chat.id, '🌍 Fetching the latest world and geopolitics news...');
   try {
@@ -152,7 +248,6 @@ bot.onText(/\/world|🌍 World/, async (msg) => {
   }
 });
 
-// Tech
 bot.onText(/\/tech|💻 Tech/, async (msg) => {
   bot.sendMessage(msg.chat.id, '💻 Getting the latest tech news...');
   try {
@@ -163,7 +258,6 @@ bot.onText(/\/tech|💻 Tech/, async (msg) => {
   }
 });
 
-// Briefing
 bot.onText(/\/briefing|☀️ Briefing/, async (msg) => {
   const chatId = msg.chat.id;
   bot.sendMessage(chatId, '☀️ Hang tight — putting together your briefing...');
@@ -171,47 +265,30 @@ bot.onText(/\/briefing|☀️ Briefing/, async (msg) => {
     const markets = await fetchNews('markets');
     const world = await fetchNews('world');
     const allNews = [...markets, ...world].map(a => a.title).join('\n');
-    const summary = await askGroq(
-      'Give me a short news briefing based on these headlines. Keep it friendly, simple and easy to understand.',
-      allNews
-    );
-    bot.sendMessage(chatId,
-      `☀️ *Your Daily Briefing*\n\n${summary}\n\n_Brought to you by the almighty Min_ 🙏`,
-      { parse_mode: 'Markdown' }
-    );
+    const summary = await askGroq('Give me a short news briefing based on these headlines. Keep it friendly, simple and easy to understand.', allNews);
+    bot.sendMessage(chatId, `☀️ *Your Daily Briefing*\n\n${summary}\n\n_Brought to you by the almighty Min_ 🙏`, { parse_mode: 'Markdown' });
   } catch (err) {
     bot.sendMessage(chatId, `😬 Briefing failed. Error: ${err.message}`);
   }
 });
 
-// Mood
 bot.onText(/\/mood|😎 Mood/, async (msg) => {
   const chatId = msg.chat.id;
   bot.sendMessage(chatId, '😎 Checking the market mood today...');
   try {
     const articles = await fetchNews('markets');
     const headlines = articles.map(a => a.title).join('\n');
-    const mood = await askGroq(
-      'Based on these headlines what is the overall market sentiment today? Is it bullish bearish or neutral? Give a fun one paragraph summary with an emoji mood rating out of 5.',
-      headlines
-    );
-    bot.sendMessage(chatId,
-      `😎 *Market Mood Today*\n\n${mood}\n\n_Brought to you by the almighty Min_ 🙏`,
-      { parse_mode: 'Markdown' }
-    );
+    const mood = await askGroq('Based on these headlines what is the overall market sentiment today? Is it bullish bearish or neutral? Give a fun one paragraph summary with an emoji mood rating out of 5.', headlines);
+    bot.sendMessage(chatId, `😎 *Market Mood Today*\n\n${mood}\n\n_Brought to you by the almighty Min_ 🙏`, { parse_mode: 'Markdown' });
   } catch (err) {
     bot.sendMessage(chatId, `😬 Could not check market mood. Error: ${err.message}`);
   }
 });
 
-// Search button prompt
 bot.onText(/🔍 Search/, (msg) => {
-  bot.sendMessage(msg.chat.id,
-    '🔍 Type /search followed by any topic!\n\nExamples:\n/search Bitcoin\n/search Nvidia earnings\n/search Singapore economy\n/search Fed rate cut'
-  );
+  bot.sendMessage(msg.chat.id, '🔍 Type /search followed by any topic!\n\nExamples:\n/search Bitcoin\n/search Nvidia earnings\n/search Singapore economy\n/search Fed rate cut');
 });
 
-// Search command
 bot.onText(/\/search (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const keyword = match[1];
@@ -224,14 +301,10 @@ bot.onText(/\/search (.+)/, async (msg, match) => {
   }
 });
 
-// Stock button prompt
 bot.onText(/📊 Stock/, (msg) => {
-  bot.sendMessage(msg.chat.id,
-    '📊 Type /stock followed by a ticker!\n\nExamples:\n/stock NVDA\n/stock AAPL\n/stock TSLA\n/stock META'
-  );
+  bot.sendMessage(msg.chat.id, '📊 Type /stock followed by a ticker!\n\nExamples:\n/stock NVDA\n/stock AAPL\n/stock TSLA\n/stock META');
 });
 
-// Stock command
 bot.onText(/\/stock (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const ticker = match[1].toUpperCase();
@@ -244,7 +317,6 @@ bot.onText(/\/stock (.+)/, async (msg, match) => {
   }
 });
 
-// Singapore
 bot.onText(/\/sg|🌏 Singapore/, async (msg) => {
   bot.sendMessage(msg.chat.id, '🌏 Fetching Singapore news...');
   try {
@@ -255,7 +327,6 @@ bot.onText(/\/sg|🌏 Singapore/, async (msg) => {
   }
 });
 
-// US
 bot.onText(/\/us|🇺🇸 US/, async (msg) => {
   bot.sendMessage(msg.chat.id, '🇺🇸 Fetching US news...');
   try {
@@ -266,7 +337,6 @@ bot.onText(/\/us|🇺🇸 US/, async (msg) => {
   }
 });
 
-// China
 bot.onText(/\/cn|🇨🇳 China/, async (msg) => {
   bot.sendMessage(msg.chat.id, '🇨🇳 Fetching China news...');
   try {
@@ -277,7 +347,6 @@ bot.onText(/\/cn|🇨🇳 China/, async (msg) => {
   }
 });
 
-// Ask command
 bot.onText(/\/ask (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const question = match[1];
@@ -292,12 +361,12 @@ bot.onText(/\/ask (.+)/, async (msg, match) => {
   }
 });
 
-// Plain text and group mention handler
+// Plain text handler
 bot.on('message', async (msg) => {
   const text = msg.text;
   if (!text) return;
   if (text.startsWith('/')) return;
-  const buttonTexts = ['📈 Markets', '🌍 World', '💻 Tech', '☀️ Briefing', '😎 Mood', '🔍 Search', '🌏 Singapore', '🇺🇸 US', '🇨🇳 China', '📊 Stock'];
+  const buttonTexts = ['📈 Markets', '🌍 World', '💻 Tech', '☀️ Briefing', '😎 Mood', '🔍 Search', '🌏 Singapore', '🇺🇸 US', '🇨🇳 China', '📊 Stock', '📅 Schedule'];
   if (buttonTexts.includes(text)) return;
   if (!shouldRespond(msg)) return;
 
@@ -316,7 +385,87 @@ bot.on('message', async (msg) => {
   }
 });
 
-// Auto update every 1 hour with top 15 news
+// ─── SCHEDULED TASKS (SGT = UTC+8) ───────────────────────────────
+
+// Morning briefing at 8am SGT (0am UTC)
+cron.schedule('0 0 * * *', async () => {
+  try {
+    const markets = await fetchNews('markets');
+    const world = await fetchNews('world');
+    const allNews = [...markets, ...world].map(a => a.title).join('\n');
+    const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
+    bot.sendMessage(CHAT_ID, `☀️ *Good Morning! Your Daily Briefing is here*\n\n${summary}\n\n_Brought to you by the almighty Min_ 🙏⚡`, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('Morning briefing error:', err.message);
+  }
+});
+
+// Daily poll at 9am SGT (1am UTC)
+cron.schedule('0 1 * * *', async () => {
+  try {
+    const day = new Date().getDay();
+    const poll = dailyPolls[day];
+    await bot.sendPoll(CHAT_ID, poll.question, poll.options, { is_anonymous: false, parse_mode: 'Markdown' });
+
+    // Weekly big question on Mondays
+    if (day === 1) {
+      const weekNum = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000)) % weeklyQuestions.length;
+      bot.sendMessage(CHAT_ID, weeklyQuestions[weekNum] + '\n\n_Drop your thoughts below — all views welcome!_ 👇', { parse_mode: 'Markdown' });
+    }
+  } catch (err) {
+    console.error('Daily poll error:', err.message);
+  }
+});
+
+// MCQ quiz at 10am SGT (2am UTC)
+cron.schedule('0 2 * * *', async () => {
+  try {
+    currentMCQ = mcqQuestions[currentMCQIndex % mcqQuestions.length];
+    currentMCQIndex++;
+    const text =
+      `🧠 *Daily Market Quiz!* ${currentMCQ.level}\n\n` +
+      `*${currentMCQ.question}*\n\n` +
+      currentMCQ.options.join('\n') +
+      `\n\n_Reply with your answer! Correct answer revealed at 11am_ ⏰`;
+    bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('MCQ error:', err.message);
+  }
+});
+
+// MCQ answer at 11am SGT (3am UTC)
+cron.schedule('0 3 * * *', async () => {
+  try {
+    if (!currentMCQ) return;
+    const text =
+      `✅ *MCQ Answer Revealed!*\n\n` +
+      `*Question:* ${currentMCQ.question}\n\n` +
+      `*Correct Answer: ${currentMCQ.answer}*\n\n` +
+      `📖 *Explanation:*\n${currentMCQ.explanation}\n\n` +
+      `_Brought to you by the almighty Min_ 🙏`;
+    bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('MCQ answer error:', err.message);
+  }
+});
+
+// Evening news at 6pm SGT (10am UTC)
+cron.schedule('0 10 * * *', async () => {
+  try {
+    const markets = await fetchNews('markets', 10);
+    const world = await fetchNews('world', 10);
+    const tech = await fetchNews('technology', 10);
+    const topNews = [...markets, ...world, ...tech].slice(0, 15);
+    const newsText = topNews.map((a, i) =>
+      `*${i + 1}. ${a.title}*\n${a.description || ''}\n[Read more](${a.url})`
+    ).join('\n\n');
+    bot.sendMessage(CHAT_ID, `🌆 *Evening News Update*\n\n${newsText}\n\n_Brought to you by the almighty Min_ 🙏⚡`, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error('Evening news error:', err.message);
+  }
+});
+
+// Hourly news update
 cron.schedule('0 * * * *', async () => {
   try {
     const markets = await fetchNews('markets', 10);
@@ -326,31 +475,9 @@ cron.schedule('0 * * * *', async () => {
     const newsText = topNews.map((a, i) =>
       `*${i + 1}. ${a.title}*\n${a.description || ''}\n[Read more](${a.url})`
     ).join('\n\n');
-    bot.sendMessage(CHAT_ID,
-      `🔔 *Hourly News Update*\n\n${newsText}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
-      { parse_mode: 'Markdown' }
-    );
+    bot.sendMessage(CHAT_ID, `🔔 *Hourly News Update*\n\n${newsText}\n\n_Brought to you by the almighty Min_ 🙏⚡`, { parse_mode: 'Markdown' });
   } catch (err) {
-    console.error('Auto update error:', err.message);
-  }
-});
-
-// Morning briefing at 8am daily
-cron.schedule('0 8 * * *', async () => {
-  try {
-    const markets = await fetchNews('markets');
-    const world = await fetchNews('world');
-    const allNews = [...markets, ...world].map(a => a.title).join('\n');
-    const summary = await askGroq(
-      'Give me a short friendly morning briefing. Simple, clear and easy to understand.',
-      allNews
-    );
-    bot.sendMessage(CHAT_ID,
-      `☀️ *Good Morning! Your Daily Briefing is here*\n\n${summary}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
-      { parse_mode: 'Markdown' }
-    );
-  } catch (err) {
-    console.error('Morning briefing error:', err.message);
+    console.error('Hourly update error:', err.message);
   }
 });
 
