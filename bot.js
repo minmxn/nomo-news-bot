@@ -4,13 +4,12 @@ const axios = require('axios');
 const cron = require('node-cron');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
-const path = require('path');
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 const CHAT_ID = process.env.CHAT_ID;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const BOT_USERNAME = process.env.BOT_USERNAME;
+const BOT_USERNAME = process.env.BOT_USERNAME || 'nomogh_bot';
 
 // ─── NEWS FETCHING ────────────────────────────────────────────────
 
@@ -61,7 +60,7 @@ Question: ${question}`;
 
 function generateNewsPDF(articles, edition) {
   return new Promise((resolve, reject) => {
-    const filename = `/tmp/almighty-news-${edition.toLowerCase().replace(' ', '-')}-${Date.now()}.pdf`;
+    const filename = `/tmp/nomo-news-${edition.toLowerCase().replace(' ', '-')}-${Date.now()}.pdf`;
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const stream = fs.createWriteStream(filename);
     doc.pipe(stream);
@@ -77,7 +76,7 @@ function generateNewsPDF(articles, edition) {
     doc.fillColor('#FFD700')
       .fontSize(32)
       .font('Helvetica-Bold')
-      .text('THE ALMIGHTY NEWS', 50, 25, { align: 'center' });
+      .text('NOMO NEWS', 50, 25, { align: 'center' });
 
     // Edition and date
     doc.fillColor('#ffffff')
@@ -98,26 +97,30 @@ function generateNewsPDF(articles, edition) {
 
       // Article number badge
       doc.rect(50, y, 24, 24).fill('#FFD700');
-      doc.fillColor('#1a1a2e').fontSize(12).font('Helvetica-Bold').text(`${i + 1}`, 50, y + 6, { width: 24, align: 'center' });
+      doc.fillColor('#1a1a2e').fontSize(12).font('Helvetica-Bold')
+        .text(`${i + 1}`, 50, y + 6, { width: 24, align: 'center' });
 
       // Headline
       const title = article.title || 'No title available';
-      doc.fillColor('#1a1a2e').fontSize(13).font('Helvetica-Bold').text(title, 85, y, { width: doc.page.width - 135 });
+      doc.fillColor('#1a1a2e').fontSize(13).font('Helvetica-Bold')
+        .text(title, 85, y, { width: doc.page.width - 135 });
 
       y += doc.heightOfString(title, { width: doc.page.width - 135, font: 'Helvetica-Bold', fontSize: 13 }) + 4;
 
       // Description
       if (article.description) {
         const desc = article.description.length > 150 ? article.description.substring(0, 150) + '...' : article.description;
-        doc.fillColor('#555555').fontSize(10).font('Helvetica').text(desc, 85, y, { width: doc.page.width - 135 });
+        doc.fillColor('#555555').fontSize(10).font('Helvetica')
+          .text(desc, 85, y, { width: doc.page.width - 135 });
         y += doc.heightOfString(desc, { width: doc.page.width - 135, fontSize: 10 }) + 4;
       }
 
-      // Source and divider
+      // Source
       doc.fillColor('#999999').fontSize(9).font('Helvetica-Oblique')
         .text(`Source: ${article.source?.name || 'Unknown'}`, 85, y);
       y += 16;
 
+      // Divider
       doc.moveTo(50, y).lineTo(doc.page.width - 50, y).strokeColor('#e0e0e0').lineWidth(0.5).stroke();
       y += 14;
     });
@@ -281,7 +284,7 @@ let currentMCQ = null;
 // ─── SCHEDULE TEXT ────────────────────────────────────────────────
 
 const scheduleText =
-`📅 *THE ALMIGHTY NEWS BOT*
+`📅 *NOMO NEWS BOT*
 *Daily Schedule* 🇸🇬 Singapore Time
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -326,10 +329,10 @@ _Brought to you by the almighty Min_ 🙏⚡`;
 
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id,
-    `👋 Hey welcome to *The Almighty News Bot!*\n\n` +
+    `👋 Hey welcome to *Nomo News Bot!*\n\n` +
     `Built by the almighty Min 🙏⚡\n\n` +
     `Your personal AI news analyst — tap a button or ask me anything! 📰🤖\n\n` +
-    `In a group just mention me with @${BOT_USERNAME} and ask away! 😎`,
+    `In a group just mention me with @nomogh_bot and ask away! 😎`,
     { parse_mode: 'Markdown', reply_markup: mainKeyboard }
   );
 });
@@ -507,16 +510,14 @@ cron.schedule('0 0 * * *', async () => {
     const allNews = allArticles.map(a => a.title).join('\n');
     const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
 
-    // Send text briefing
     await bot.sendMessage(CHAT_ID,
       `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
       { parse_mode: 'Markdown' }
     );
 
-    // Generate and send morning PDF
     const pdfPath = await generateNewsPDF(allArticles, 'Morning Edition');
     await bot.sendDocument(CHAT_ID, pdfPath, {
-      caption: `📰 *The Almighty News — Morning Edition*\n${new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' })}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
+      caption: `📰 *Nomo News — Morning Edition*\n${new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' })}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
       parse_mode: 'Markdown'
     });
     fs.unlinkSync(pdfPath);
@@ -584,16 +585,14 @@ cron.schedule('0 10 * * *', async () => {
       `*${i + 1}. ${a.title}*\n${a.description || ''}\n[Read more](${a.url})`
     ).join('\n\n');
 
-    // Send text update
     await bot.sendMessage(CHAT_ID,
       `🌆 *Evening News Update*\n\n${newsText}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
       { parse_mode: 'Markdown' }
     );
 
-    // Generate and send evening PDF
     const pdfPath = await generateNewsPDF(allArticles, 'Evening Edition');
     await bot.sendDocument(CHAT_ID, pdfPath, {
-      caption: `📰 *The Almighty News — Evening Edition*\n${new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' })}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
+      caption: `📰 *Nomo News — Evening Edition*\n${new Date().toLocaleDateString('en-SG', { timeZone: 'Asia/Singapore' })}\n\n_Brought to you by the almighty Min_ 🙏⚡`,
       parse_mode: 'Markdown'
     });
     fs.unlinkSync(pdfPath);
@@ -621,4 +620,4 @@ cron.schedule('0 * * * *', async () => {
   }
 });
 
-console.log('✅ The Almighty News Bot is running — built by the almighty Min 🙏');
+console.log('✅ Nomo News Bot is running — built by the almighty Min 🙏');
