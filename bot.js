@@ -19,7 +19,7 @@ async function fetchNews(category = 'markets') {
   return feed.items.slice(0, 5);
 }
 
-async function askGemini(question, newsContext = '') {
+async function askGroq(question, newsContext = '') {
   const prompt = `You are a witty, friendly financial and geopolitical news analyst built by the almighty Min.
 You explain complex news in plain simple English that anyone can understand.
 Keep answers concise, clear and occasionally add a light humorous remark.
@@ -29,20 +29,23 @@ ${newsContext ? `Latest news context:\n${newsContext}\n\n` : ''}
 Question: ${question}`;
 
   const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    'https://api.groq.com/openai/v1/chat/completions',
     {
-      contents: [{ parts: [{ text: prompt }] }]
+      model: 'llama3-8b-8192',
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 1000,
     },
     {
-      headers: { 'Content-Type': 'application/json' }
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
     }
   );
 
-  if (response.data.error) {
-    throw new Error(`Gemini error: ${response.data.error.message}`);
-  }
-
-  return response.data.candidates[0].content.parts[0].text;
+  return response.data.choices[0].message.content;
 }
 
 function formatNews(articles, category) {
@@ -115,7 +118,7 @@ bot.onText(/\/briefing/, async (msg) => {
     const markets = await fetchNews('markets');
     const world = await fetchNews('world');
     const allNews = [...markets, ...world].map(a => a.title).join('\n');
-    const summary = await askGemini(
+    const summary = await askGroq(
       'Give me a short news briefing based on these headlines. Keep it friendly, simple and easy to understand.',
       allNews
     );
@@ -137,7 +140,7 @@ bot.onText(/\/ask (.+)/, async (msg, match) => {
   try {
     const articles = await fetchNews('markets');
     const newsContext = articles.map(a => a.title).join('\n');
-    const answer = await askGemini(question, newsContext);
+    const answer = await askGroq(question, newsContext);
     bot.sendMessage(chatId, `🤖 *Here is what I found:*\n\n${answer}`, { parse_mode: 'Markdown' });
   } catch (err) {
     console.error('Ask error:', err.message);
@@ -153,7 +156,7 @@ bot.on('message', async (msg) => {
     try {
       const articles = await fetchNews('markets');
       const newsContext = articles.map(a => a.title).join('\n');
-      const answer = await askGemini(msg.text, newsContext);
+      const answer = await askGroq(msg.text, newsContext);
       bot.sendMessage(chatId, `🤖 *Here is what I found:*\n\n${answer}`, { parse_mode: 'Markdown' });
     } catch (err) {
       console.error('Message error:', err.message);
@@ -168,7 +171,7 @@ cron.schedule('0 8 * * *', async () => {
     const markets = await fetchNews('markets');
     const world = await fetchNews('world');
     const allNews = [...markets, ...world].map(a => a.title).join('\n');
-    const summary = await askGemini(
+    const summary = await askGroq(
       'Give me a short friendly morning briefing. Simple, clear and easy to understand.',
       allNews
     );
