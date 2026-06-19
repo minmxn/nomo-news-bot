@@ -13,6 +13,21 @@ const BOT_USERNAME = process.env.BOT_USERNAME || 'nomogh_bot';
 
 const TZ = 'Asia/Singapore';
 
+// ─── QUOTA TRACKER ────────────────────────────────────────────────
+
+const DAILY_LIMIT = 100;
+let quotaDate = new Date().toLocaleDateString('en-SG', { timeZone: TZ });
+let quotaCount = 0;
+
+function trackApiCall() {
+  const today = new Date().toLocaleDateString('en-SG', { timeZone: TZ });
+  if (today !== quotaDate) {
+    quotaDate = today;
+    quotaCount = 0;
+  }
+  quotaCount++;
+}
+
 // ─── NEWS FETCHING ────────────────────────────────────────────────
 
 async function fetchNews(category, pageSize = 10) {
@@ -21,6 +36,7 @@ async function fetchNews(category, pageSize = 10) {
     world: 'geopolitics OR international relations OR war OR diplomacy OR sanctions',
     technology: 'artificial intelligence OR technology OR semiconductor OR cybersecurity',
   };
+  trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/everything', {
     params: { q: queries[category], language: 'en', sortBy: 'publishedAt', pageSize, apiKey: NEWS_API_KEY }
   });
@@ -28,6 +44,7 @@ async function fetchNews(category, pageSize = 10) {
 }
 
 async function fetchNewsByKeyword(keyword, pageSize = 5) {
+  trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/everything', {
     params: { q: keyword, language: 'en', sortBy: 'publishedAt', pageSize, apiKey: NEWS_API_KEY }
   });
@@ -35,6 +52,7 @@ async function fetchNewsByKeyword(keyword, pageSize = 5) {
 }
 
 async function fetchNewsByCountry(country, pageSize = 5) {
+  trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/top-headlines', {
     params: { country, pageSize, apiKey: NEWS_API_KEY }
   });
@@ -46,6 +64,7 @@ async function fetchNewsByCountry(country, pageSize = 5) {
 // Replaces the old pattern of fetchNews('markets') + fetchNews('world') + fetchNews('technology').
 
 async function fetchCombinedNews(pageSize = 15) {
+  trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/everything', {
     params: {
       q: 'stock market OR geopolitics OR artificial intelligence OR economy',
@@ -423,6 +442,22 @@ bot.onText(/\/testpdf/, async (msg) => {
   } catch (err) {
     bot.sendMessage(chatId, `😬 PDF test failed. Error: ${err.message}`);
   }
+});
+
+bot.onText(/\/quota/, (msg) => {
+  const remaining = DAILY_LIMIT - quotaCount;
+  const pct = Math.round((quotaCount / DAILY_LIMIT) * 100);
+  const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+  const status = remaining <= 10 ? '🔴' : remaining <= 30 ? '🟡' : '🟢';
+  bot.sendMessage(msg.chat.id,
+    `📊 *NewsAPI Quota — Today*\n\n` +
+    `${status} \`${bar}\` ${pct}%\n\n` +
+    `*Used:* ${quotaCount} / ${DAILY_LIMIT} calls\n` +
+    `*Remaining:* ${remaining} calls\n` +
+    `*Resets:* midnight SGT\n\n` +
+    `_BUILT BY MIN_ ⚡`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 bot.on('message', async (msg) => {
