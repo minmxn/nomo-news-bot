@@ -1,9 +1,7 @@
-const fs = require('fs');
 const cron = require('node-cron');
 const { TZ, CHAT_ID, WEBAPP_URL } = require('../config');
 const { fetchCombinedNews } = require('./news');
 const { askGroq, generateMCQSet, generatePoll } = require('./groq');
-const { generateNewsPDF } = require('./pdf');
 const { startReader } = require('./reader');
 const { sendTopStoriesTeaser } = require('./teaser');
 const { dailyPolls, weeklyQuestions } = require('../data/polls');
@@ -31,7 +29,7 @@ const scheduleText =
 ━━━━━━━━━━━━━━━━━━━━━
 🌅 *MORNING*
 ━━━━━━━━━━━━━━━━━━━━━
-☀️  8:00am — Morning Briefing + PDF Magazine
+☀️  8:00am — Morning Briefing
 🗳️  9:00am — Daily Poll
 🧠 10:00am — Daily MCQ Quiz
 ✅ 11:00am — MCQ Answer Revealed
@@ -41,7 +39,7 @@ const scheduleText =
 ━━━━━━━━━━━━━━━━━━━━━
 📖 12:00pm — News Reader
 📖  3:00pm — News Reader
-🌆  6:00pm — Evening Top Stories
+🌆  6:00pm — Evening Top News
 📖  8:00pm — News Reader
 📖 10:00pm — News Reader
 
@@ -84,24 +82,21 @@ function registerScheduler(bot) {
   const cronOpts = { timezone: TZ };
 
   // API call budget per day (100 limit on free tier):
-  //   8am briefing+PDF:   1 (fetchCombinedNews)
-  //   9am poll:           1 (fetchCombinedNews — for AI poll context)
-  //   10am MCQ:           1 (fetchCombinedNews — for AI quiz context)
-  //   6pm teaser:         1 (fetchCombinedNews via getStories)
-  //   4x reader updates:  1 each = 4 (fetchCombinedNews via startReader)
-  //   /testpdf:           1 (fetchCombinedNews)
+  //   8am briefing:        1 (fetchCombinedNews)
+  //   9am poll:            1 (fetchCombinedNews — for AI poll context)
+  //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
+  //   6pm evening teaser:  1 (fetchCombinedNews via getStories)
+  //   4x reader updates:   1 each = 4 (fetchCombinedNews via startReader)
+  //   /testpdf:            1 (fetchCombinedNews)
   //   Total scheduled: ~9/day — leaves ~90 calls for user commands
 
-  // 8:00am SGT — Morning briefing + PDF
+  // 8:00am SGT — Morning briefing (AI summary only)
   cron.schedule('0 8 * * *', async () => {
     try {
       const allArticles = await fetchCombinedNews(15);
       const allNews = allArticles.map(a => a.title).join('\n');
       const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
       await bot.sendMessage(CHAT_ID, `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' });
-      const pdfPath = await generateNewsPDF(allArticles, 'Morning Edition');
-      await bot.sendDocument(CHAT_ID, pdfPath, { caption: `📰 *Nomo News — Morning Edition*\n\n_BUILT BY MIN_ ⚡`, parse_mode: 'Markdown' });
-      fs.unlinkSync(pdfPath);
     } catch (err) {
       console.error('Morning briefing error:', err.message);
     }
@@ -174,14 +169,14 @@ function registerScheduler(bot) {
     }
   }, cronOpts);
 
-  // 6:00pm SGT — Evening top-stories teaser card
+  // 6:00pm SGT — Evening Top News teaser card
   cron.schedule('0 18 * * *', async () => {
     try {
       if (WEBAPP_URL) {
-        await sendTopStoriesTeaser(bot, CHAT_ID, { url: WEBAPP_URL, webApp: false });
+        await sendTopStoriesTeaser(bot, CHAT_ID, { url: WEBAPP_URL, webApp: false, title: '🌆 Evening Top News' });
       } else {
         // No Mini App URL configured — fall back to the in-chat carousel.
-        await bot.sendMessage(CHAT_ID, '🌆 *Evening Edition* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
+        await bot.sendMessage(CHAT_ID, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
         await startReader(bot, CHAT_ID, { silent: true });
       }
     } catch (err) {

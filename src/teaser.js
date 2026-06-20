@@ -12,7 +12,9 @@ function escHtml(text) {
 //   opts.webApp  — true for private chats (native Mini App button); false
 //                  for groups/channels (plain link button, since web_app
 //                  inline buttons only work in private chats)
+//   opts.title   — heading shown on the card (e.g. "🌅 Morning Edition")
 async function sendTopStoriesTeaser(bot, chatId, opts = {}) {
+  const heading = escHtml(opts.title || "📰 Today's Top Stories");
   let top = null, count = 0;
   try {
     const stories = await getStories();
@@ -22,8 +24,8 @@ async function sendTopStoriesTeaser(bot, chatId, opts = {}) {
   }
 
   const caption = top
-    ? `📰 <b>Today's Top Stories</b>\n\n<b>${escHtml(top.title)}</b>\n\n…and ${count - 1} more inside 👇`
-    : "📰 <b>Today's Top Stories</b>\n\nTap below to read today's news 👇";
+    ? `<b>${heading}</b>\n\n<b>${escHtml(top.title)}</b>\n\n…and ${count - 1} more inside 👇`
+    : `<b>${heading}</b>\n\nTap below to read today's news 👇`;
   const photo = (top && top.image) ? top.image : BANNER;
 
   const button = opts.url

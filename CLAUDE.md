@@ -87,13 +87,13 @@ bot.js
 
 | Time | Post | Source |
 |---|---|---|
-| 8:00am | Morning briefing + PDF magazine | scheduler.js |
+| 8:00am | Morning briefing (AI summary only) | scheduler.js |
 | 9:00am | Daily poll (+ weekly question on Mondays) — AI-generated, falls back to hardcoded | scheduler.js + data/polls.js |
 | 10:00am | MCQ quiz (3 questions) — AI-generated, falls back to hardcoded | scheduler.js + data/mcq.js |
 | 11:00am | MCQ answers | scheduler.js |
 | 12:00pm | News reader (carousel) | scheduler.js → reader.js |
 | 3:00pm | News reader (carousel) | scheduler.js → reader.js |
-| 6:00pm | Evening top-stories teaser card (opens the reader) | scheduler.js + teaser.js |
+| 6:00pm | Evening Top News teaser card (opens the reader) | scheduler.js + teaser.js |
 | 8:00pm | News reader (carousel) | scheduler.js → reader.js |
 | 10:00pm | News reader (carousel) | scheduler.js → reader.js |
 
