@@ -6,7 +6,7 @@
 <title>Nomo News</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { --navy:#1a1a2e; --gold:#FFD700; --ink:#0e0e16; --nav-h:62px; }
+  :root { --navy:#1a1a2e; --gold:#FFD700; --ink:#0e0e16; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; height:100%; background:var(--ink); color:#fff;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; overflow:hidden; }
@@ -17,37 +17,38 @@
   .deck::-webkit-scrollbar { display:none; }
   .card { position:relative; min-width:100vw; width:100vw; height:100vh; height:100dvh;
     scroll-snap-align:center; scroll-snap-stop:always; display:flex; flex-direction:column; }
-  .photo { height:48vh; height:48dvh; background-size:cover; background-position:center;
+  .photo { height:50vh; height:50dvh; background-size:cover; background-position:center;
     background-color:var(--navy); position:relative; flex-shrink:0; }
   .photo::after { content:""; position:absolute; left:0; right:0; bottom:0; height:90px;
     background:linear-gradient(to top, rgba(14,14,22,1), rgba(14,14,22,0)); }
-  .badge { position:absolute; top:16px; left:16px; background:#E12828; color:#fff;
+  .badge { position:absolute; top:34px; left:16px; background:#E12828; color:#fff;
     font-size:11px; font-weight:600; letter-spacing:1px; padding:5px 11px; border-radius:6px; z-index:2; }
-  .body { flex:1; padding:16px 22px calc(var(--nav-h) + 16px); display:flex; flex-direction:column; overflow:hidden; }
+  .body { flex:1; padding:16px 22px 28px; display:flex; flex-direction:column; overflow:hidden; }
   .src { color:var(--gold); font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
   .headline { font-size:22px; font-weight:600; line-height:1.22; margin:8px 0 0; }
   .summary { font-size:15px; line-height:1.6; color:#d7d7e0; margin:12px 0 0; overflow-y:auto; }
-  .read { margin-top:auto; padding-top:14px; }
+  .read { margin-top:auto; padding-top:14px; position:relative; z-index:5; }
   .read a { color:var(--gold); font-size:15px; font-weight:600; text-decoration:none;
     border-bottom:2px solid var(--gold); padding-bottom:3px; }
-  .nav { position:fixed; left:0; right:0; bottom:0; height:var(--nav-h); display:flex; align-items:stretch;
-    background:var(--navy); border-top:2px solid var(--gold); z-index:5; }
-  .nav button { flex:1; border:none; background:transparent; color:var(--gold); font-size:17px;
-    font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; }
-  .nav button:active { background:rgba(255,215,0,0.12); }
-  .nav button:disabled { color:#5a5a6b; }
-  .nav .pos { width:84px; flex:none; display:flex; align-items:center; justify-content:center;
-    color:#cfcfe0; font-size:13px; font-weight:600; border-left:1px solid #2c2c40; border-right:1px solid #2c2c40; }
+  .bars { position:fixed; top:0; left:0; right:0; display:flex; gap:4px; padding:9px 12px; z-index:6; }
+  .bar { flex:1; height:3px; background:rgba(255,255,255,0.28); border-radius:2px; transition:background .2s; }
+  .bar.on { background:var(--gold); }
+  .chev { position:fixed; top:25vh; top:25dvh; font-size:30px; color:rgba(255,255,255,0.5); z-index:3; pointer-events:none; }
+  .chev.l { left:8px; } .chev.r { right:8px; }
+  .hint { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:8;
+    background:rgba(0,0,0,0.55); transition:opacity .4s; }
+  .hint.hide { opacity:0; pointer-events:none; }
+  .hint .box { text-align:center; color:#fff; font-size:15px; line-height:1.5; padding:0 32px; }
+  .hint .box b { color:var(--gold); }
 </style>
 </head>
 <body>
   <div id="status">Loading the latest stories…</div>
   <div class="deck" id="deck" hidden></div>
-  <div class="nav" id="nav" hidden>
-    <button id="prev" aria-label="Previous story">‹ Prev</button>
-    <span class="pos" id="pos">1 / 1</span>
-    <button id="next" aria-label="Next story">Next ›</button>
-  </div>
+  <div class="bars" id="bars" hidden></div>
+  <div class="chev l" id="chevL" hidden>‹</div>
+  <div class="chev r" id="chevR" hidden>›</div>
+  <div class="hint hide" id="hint"><div class="box">Tap the <b>right</b> side for the next story,<br>the <b>left</b> side to go back.</div></div>
 
 <script>
   var tg = window.Telegram && window.Telegram.WebApp;
@@ -56,9 +57,7 @@
     tg.setBackgroundColor && tg.setBackgroundColor('#0e0e16'); }
 
   var deck = document.getElementById('deck');
-  var posEl = document.getElementById('pos');
-  var prevBtn = document.getElementById('prev');
-  var nextBtn = document.getElementById('next');
+  var barsEl = document.getElementById('bars');
   var total = 0, index = 0;
 
   function esc(s) { return String(s || '').replace(/[&<>"]/g, function (c) {
@@ -66,17 +65,18 @@
   function openLink(url) { if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
   function haptic() { if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged(); }
 
-  function syncControls() {
-    posEl.textContent = (index + 1) + ' / ' + total;
-    prevBtn.disabled = index === 0;
-    nextBtn.disabled = index === total - 1;
+  function updateBars() {
+    var kids = barsEl.children;
+    for (var i = 0; i < kids.length; i++) kids[i].className = 'bar' + (i <= index ? ' on' : '');
+    document.getElementById('chevL').style.visibility = index === 0 ? 'hidden' : 'visible';
+    document.getElementById('chevR').style.visibility = index === total - 1 ? 'hidden' : 'visible';
   }
   function go(delta) {
     var target = Math.min(Math.max(index + delta, 0), total - 1);
     if (target === index) return;
     index = target;
     deck.scrollTo({ left: index * window.innerWidth, behavior: 'smooth' });
-    syncControls();
+    updateBars();
     haptic();
   }
 
@@ -98,23 +98,39 @@
         + '</div></section>';
     }).join('');
 
+    barsEl.innerHTML = stories.map(function () { return '<span class="bar"></span>'; }).join('');
+
     document.getElementById('status').hidden = true;
     deck.hidden = false;
-    document.getElementById('nav').hidden = false;
-    syncControls();
+    barsEl.hidden = false;
+    document.getElementById('chevL').hidden = false;
+    document.getElementById('chevR').hidden = false;
+    updateBars();
 
-    prevBtn.addEventListener('click', function () { go(-1); });
-    nextBtn.addEventListener('click', function () { go(1); });
+    // Instagram-style tap: left third = back, rest = forward. Ignore taps on links.
+    deck.addEventListener('click', function (e) {
+      if (e.target.closest('a')) return;
+      if (e.clientX < window.innerWidth * 0.32) go(-1); else go(1);
+    });
 
-    // Keep buttons/counter in sync if the user also swipes.
+    // Keep state in sync if the user swipes instead of tapping.
     var t;
     deck.addEventListener('scroll', function () {
       clearTimeout(t);
       t = setTimeout(function () {
         var i = Math.round(deck.scrollLeft / window.innerWidth);
-        if (i !== index) { index = i; syncControls(); haptic(); }
+        if (i !== index) { index = i; updateBars(); haptic(); }
       }, 80);
     }, { passive: true });
+
+    // One-time tap hint.
+    if (total > 1) {
+      var hint = document.getElementById('hint');
+      hint.classList.remove('hide');
+      var dismiss = function () { hint.classList.add('hide'); };
+      setTimeout(dismiss, 3200);
+      hint.addEventListener('click', dismiss);
+    }
   }
 
   fetch('/api/stories')
