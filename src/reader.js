@@ -6,7 +6,7 @@ const { escapeMarkdown, truncate } = require('./helpers');
 // Fallback image Telegram can fetch when an article has no usable photo.
 const PLACEHOLDER = 'https://placehold.co/1024x576/1a1a2e/FFD700.png?text=NOMO+NEWS';
 const STORY_COUNT = 10;
-const SESSION_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // In-memory carousel sessions:
 //   sid -> { articles, summaries, buffers, fileIds, index, createdAt }
