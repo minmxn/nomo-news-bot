@@ -1,0 +1,101 @@
+# Nomo News Bot
+
+A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, summarizes it with AI, and posts it on a daily schedule — as a swipeable card reader, a magazine-style PDF, polls, and quizzes.
+
+## Tech stack
+
+- **Node.js** (CommonJS modules)
+- **node-telegram-bot-api** — Telegram bot (long polling)
+- **axios** — HTTP (NewsAPI, Groq, image downloads)
+- **node-cron** — scheduled posts (all times Asia/Singapore)
+- **pdfkit** — PDF magazine generation
+- **NewsAPI** (newsapi.org) — news source (free tier: 100 calls/day, ~24h article delay)
+- **Groq** (llama-3.3-70b) — AI summaries, briefings, polls, quizzes
+- Deployed on **Railway** (auto-deploys from `main`)
+
+## Run
+
+```
+npm install
+npm start        # = node bot.js
+```
+
+Only one instance may poll Telegram at a time, or you get HTTP 409 conflicts. Since Railway runs the bot, don't also run it locally against the same token.
+
+## Environment variables
+
+Validated at startup in [config.js](config.js) — the process exits with a clear message if a required var is missing.
+
+| Var | Required | Purpose |
+|---|---|---|
+| `TELEGRAM_TOKEN` | ✅ | Bot token from @BotFather |
+| `NEWS_API_KEY` | ✅ | newsapi.org key |
+| `GROQ_API_KEY` | recommended | AI features; degrade gracefully if absent |
+| `CHAT_ID` | recommended | Target chat/channel for scheduled posts |
+| `BOT_USERNAME` | optional | Defaults to `nomogh_bot` (used for group mention/reply detection) |
+| `READER_STORE` | optional | Path for persisted reader sessions; point at a Railway volume (e.g. `/data/reader-sessions.json`) to survive redeploys |
+
+## Architecture
+
+`bot.js` is a thin entry point: it creates the bot and calls three registrars.
+
+```
+bot.js
+├── config.js              env vars + constants + startup validation
+├── src/
+│   ├── commands.js        registerCommands(bot) — all bot.onText handlers + the
+│   │                      free-text AI fallback (bot.on('message'))
+│   ├── scheduler.js       registerScheduler(bot) — all cron jobs, the reply
+│   │                      keyboard, the /schedule text, MCQ fallback picker
+│   ├── reader.js          registerReader(bot) + startReader() — the /read
+│   │                      swipeable carousel (inline-button navigation)
+│   ├── news.js            NewsAPI fetchers + blocked-domain filtering
+│   ├── groq.js            askGroq + generateSummaries / generateMCQSet /
+│   │                      generatePoll (JSON mode, with timeout)
+│   ├── pdf.js             generateNewsPDF() — magazine PDF (cover + stories)
+│   ├── quota.js           in-memory daily NewsAPI call counter
+│   └── helpers.js         escapeMarkdown, truncate, buildNewsBody, formatNews,
+│                          shouldRespond, cleanMessage
+└── data/
+    ├── polls.js           dailyPolls (per weekday) + weeklyQuestions
+    └── mcq.js             mcqQuestions (hardcoded fallback) + mcqState
+```
+
+### Data flow (scheduled post)
+
+`cron fires → news.js fetchCombinedNews() (1 NewsAPI call, blocked domains filtered)
+→ groq.js summarizes/builds content → bot sends to CHAT_ID`.
+
+### Key registrars
+
+- **commands.js** — `/start`, `/markets`, `/world`, `/tech`, `/briefing`, `/mood`, `/search`, `/stock`, `/sg`, `/us`, `/cn`, `/read`, `/quota`, `/testpdf`, `/schedule`, plus reply-keyboard buttons and an AI fallback for free-text questions. See [COMMANDS.md](COMMANDS.md).
+- **scheduler.js** — cron jobs (see schedule below). `postNewsUpdate()` posts the carousel; `fallbackMCQSet()` rotates hardcoded questions when Groq is unavailable.
+- **reader.js** — the carousel. Sessions (articles + summaries + cached Telegram `file_id`s) live in a `Map`, persisted to `READER_STORE` (24h TTL). Images are pre-downloaded so `Next`/`Prev` (via `editMessageMedia`) are fast; cached `file_id`s make repeat views instant. Image source order: cached file_id → buffer → URL → placeholder.
+
+## Daily schedule (SGT)
+
+| Time | Post | Source |
+|---|---|---|
+| 8:00am | Morning briefing + PDF magazine | scheduler.js |
+| 9:00am | Daily poll (+ weekly question on Mondays) — AI-generated, falls back to hardcoded | scheduler.js + data/polls.js |
+| 10:00am | MCQ quiz (3 questions) — AI-generated, falls back to hardcoded | scheduler.js + data/mcq.js |
+| 11:00am | MCQ answers | scheduler.js |
+| 12:00pm | News reader (carousel) | scheduler.js → reader.js |
+| 3:00pm | News reader (carousel) | scheduler.js → reader.js |
+| 6:00pm | Evening news + PDF magazine | scheduler.js |
+| 8:00pm | News reader (carousel) | scheduler.js → reader.js |
+| 10:00pm | News reader (carousel) | scheduler.js → reader.js |
+
+## Design notes / conventions
+
+- **AI is best-effort.** Every Groq-backed feature (summaries, poll, MCQ) has a silent fallback (description / hardcoded poll / hardcoded MCQ) and logs failures via `console.error`. Users always get content.
+- **API budget.** Scheduled posts use ~9 NewsAPI calls/day (1 each) to stay well under the 100/day free-tier cap. The combined query (`fetchCombinedNews`) replaced 3 separate category fetches. Quota is tracked in `quota.js` (in-memory, resets at SGT midnight).
+- **Blocked domains.** `news.js` drops aggregator/redirector domains (biztoc.com, alltoc.com, medium.com) from every result; fetchers request extras and trim so enough clean stories remain.
+- **PDFKit only supports JPEG/PNG.** Other image formats fall back to a navy "NOMO NEWS" placeholder. (Telegram itself handles WebP, so the carousel shows more real photos than the PDF.)
+- **Times are always Asia/Singapore** via the `TZ` constant and `cron` `{ timezone: TZ }`.
+
+## Known limitations
+
+- NewsAPI free tier delays articles up to ~24h and caps at 100 calls/day.
+- Reader sessions persist to a file; on Railway this only survives redeploys if `READER_STORE` points at a mounted volume.
+- Single polling instance only (no horizontal scaling).
