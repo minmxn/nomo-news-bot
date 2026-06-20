@@ -20,6 +20,7 @@ const TRUSTED_SOURCES = [
   'businessinsider.com', 'forbes.com', 'economist.com', 'axios.com',
   'fortune.com', 'barrons.com', 'nytimes.com', 'washingtonpost.com',
   'aljazeera.com', 'channelnewsasia.com', 'straitstimes.com',
+  'asia.nikkei.com', 'businesstimes.com.sg',
   'techcrunch.com', 'theverge.com', 'arstechnica.com', 'wired.com'
 ].join(',');
 
@@ -77,7 +78,7 @@ async function fetchCombinedNews(pageSize = 15) {
       q: 'stock market OR geopolitics OR artificial intelligence OR economy',
       domains: TRUSTED_SOURCES,
       language: 'en',
-      sortBy: 'publishedAt',
+      sortBy: 'popularity', // lead with significant stories from major outlets, not just newest
       pageSize: Math.min(pageSize + 10, 100),
       apiKey: NEWS_API_KEY
     }
