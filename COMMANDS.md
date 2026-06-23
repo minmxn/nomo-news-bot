@@ -71,19 +71,26 @@ schedule - View the daily schedule
 
 ```
 nomo-news-bot/
-├── bot.js              # Entry point
-├── config.js           # Env vars and constants
+├── bot.js              # Entry point (wires registrars + web server)
+├── config.js           # Env vars, constants, startup validation
 ├── src/
-│   ├── commands.js     # All bot command handlers
-│   ├── scheduler.js    # Cron jobs and scheduled posts
-│   ├── news.js         # NewsAPI fetch functions
-│   ├── groq.js         # Groq AI helper
-│   ├── quota.js        # Daily API call tracker
-│   ├── pdf.js          # PDF generator
+│   ├── commands.js     # All bot command handlers + free-text Q&A
+│   ├── scheduler.js    # Cron jobs, reply keyboard, /schedule text
+│   ├── reader.js       # /read tap-through carousel (persisted sessions)
+│   ├── webserver.js    # Express server for the Mini App + /api/stories
+│   ├── teaser.js       # Evening Top News teaser card
+│   ├── news.js         # NewsAPI fetch functions + blocklist filtering
+│   ├── groq.js         # Groq AI (summaries, briefing, poll, quiz, chat)
+│   ├── quota.js        # Daily NewsAPI call tracker
+│   ├── memory.js       # Per-user chat memory for free-text Q&A
+│   ├── blocklist.js    # Runtime domain blocklist (/block, /unblock)
+│   ├── pdf.js          # PDF magazine generator (used by /testpdf)
 │   └── helpers.js      # Shared utilities
-└── data/
-    ├── polls.js        # Daily polls (per weekday)
-    └── mcq.js          # Quiz questions and state
+├── data/
+│   ├── polls.js        # Daily polls (per weekday)
+│   └── mcq.js          # Quiz questions and shared state
+└── public/
+    └── index.html      # Mini App — fullscreen swipe reader
 ```
 
 ## Daily Schedule (SGT)

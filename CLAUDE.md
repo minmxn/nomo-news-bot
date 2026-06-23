@@ -86,7 +86,7 @@ bot.js
 
 ### Key registrars
 
-- **commands.js** — `/start`, `/markets`, `/world`, `/tech`, `/briefing`, `/mood`, `/search`, `/stock`, `/sg`, `/us`, `/cn`, `/read`, `/quota`, `/reset`, `/testpdf`, `/schedule`, plus reply-keyboard buttons and an AI fallback for free-text questions. The free-text Q&A uses `chatGroq` with per-user memory ([memory.js](src/memory.js)) and reply-context (anchors to the message a user replied to). See [COMMANDS.md](COMMANDS.md).
+- **commands.js** — `/start`, `/markets`, `/world`, `/tech`, `/briefing`, `/mood`, `/search`, `/stock`, `/sg`, `/us`, `/cn`, `/quota`, `/reset`, `/testpdf`, `/schedule`, the blocklist commands (`/block`, `/unblock`, `/blocked`, `/myid`), plus reply-keyboard buttons and an AI fallback for free-text questions. The free-text Q&A uses `chatGroq` with per-user memory ([memory.js](src/memory.js)) and reply-context (anchors to the message a user replied to). `/read` is registered in reader.js and `/news` (Mini App launch) in bot.js. See [COMMANDS.md](COMMANDS.md).
 - **scheduler.js** — cron jobs (see schedule below). `postNewsUpdate()` posts the carousel; `fallbackMCQSet()` rotates hardcoded questions when Groq is unavailable.
 - **reader.js** — the carousel. Sessions (articles + summaries + cached Telegram `file_id`s) live in a `Map`, persisted to `READER_STORE` (24h TTL). Images are pre-downloaded so `Next`/`Prev` (via `editMessageMedia`) are fast; cached `file_id`s make repeat views instant. Image source order: cached file_id → buffer → URL → placeholder.
 
