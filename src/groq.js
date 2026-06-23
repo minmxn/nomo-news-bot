@@ -1,6 +1,17 @@
 const axios = require('axios');
 const { GROQ_API_KEY } = require('../config');
 
+// Groq model used for every AI feature. gpt-oss-120b is Groq's recommended
+// replacement for llama-3.3-70b-versatile (deprecated 2026-08-16). Change
+// this one constant to swap models everywhere.
+const MODEL = 'openai/gpt-oss-120b';
+
+// gpt-oss is a reasoning model: by default it spends hundreds of "thinking"
+// tokens before answering, which adds latency, cost and (worse) can blow the
+// max_tokens budget so the JSON answer is truncated. Our tasks (summaries,
+// quizzes, polls, news Q&A) don't need deep reasoning, so keep it low.
+const REASONING_EFFORT = 'low';
+
 // Attribution shown wherever an AI-generated summary is displayed.
 const AI_CREDIT = 'Summarised by Groq AI';
 
@@ -16,7 +27,7 @@ Question: ${question}`;
 
   const response = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
-    { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 1000 },
+    { model: MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 1000, reasoning_effort: REASONING_EFFORT },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
   );
   return response.data.choices[0].message.content;
@@ -32,7 +43,7 @@ async function chatGroq(history, question) {
   ];
   const response = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
-    { model: 'llama-3.3-70b-versatile', messages, max_tokens: 1000 },
+    { model: MODEL, messages, max_tokens: 1000, reasoning_effort: REASONING_EFFORT },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
   );
   return response.data.choices[0].message.content;
@@ -53,10 +64,11 @@ async function groqJSON(prompt, maxTokens = 1000, temperature = 1) {
   const response = await withTimeout(axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
-      model: 'llama-3.3-70b-versatile',
+      model: MODEL,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: maxTokens,
       temperature,
+      reasoning_effort: REASONING_EFFORT,
       response_format: { type: 'json_object' }
     },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
@@ -90,7 +102,7 @@ HARD RULE: every one of your three questions must be about a DIFFERENT subject f
 Based on these recent headlines, create THREE multiple-choice questions connected to the news, at three clearly different difficulty levels:
 - 🟢 Easy: beginner-friendly, tests one basic concept.
 - 🟡 Medium: intermediate, needs real understanding of how something works.
-- 🔴 Hard: genuinely difficult, expert/CFA-professional level — use applied reasoning, mechanisms, second-order effects or a short numerical/scenario problem, with subtle distractors. This question should challenge even finance professionals.
+- 🔴 Hard: genuinely difficult, expert/CFA-professional level — test deep conceptual understanding, mechanisms, or second-order / knock-on effects, with subtle distractors. PREFER reasoning over arithmetic: do NOT pose multi-step numerical problems (e.g. forward pricing, discounting, bond math) — they tend to come out internally inconsistent. If a number is unavoidable, keep the calculation trivial and make sure the stated correct answer is unambiguously and verifiably right. This question should challenge even finance professionals.
 
 IMPORTANT — vary the topics: tie ALL THREE questions (the Easy one included) to a specific company, asset, market, region or event mentioned in TODAY'S headlines below. Do NOT fall back on generic evergreen textbook questions (e.g. "what does the S&P 500 track", "what does GDP stand for") — pick fresh angles that would differ from day to day.
 Each question must be self-contained (do not assume the reader saw a specific article).
@@ -109,7 +121,8 @@ Respond ONLY with valid JSON in exactly this shape:
 Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   // Higher temperature → more varied wording and angles day to day.
-  const data = await groqJSON(prompt, 1000, 1.1);
+  // Extra token headroom so three detailed questions never truncate.
+  const data = await groqJSON(prompt, 1500, 1.1);
   const qs = data && data.questions;
   const valid = Array.isArray(qs) && qs.length === 3 && qs.every(isValidMCQ);
   if (!valid) throw new Error('Malformed MCQ set from Groq');
