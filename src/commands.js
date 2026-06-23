@@ -14,6 +14,7 @@ function registerCommands(bot) {
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id,
       `👋 Hey welcome to Nomo News Bot!\n\n` +
+      `📰 Nomo — No More Information Overload. Know More in Minutes.\n\n` +
       `BUILT BY MIN ⚡\n\n` +
       `Your personal AI news analyst — tap a button or ask me anything! 📰🤖\n\n` +
       `In a group just mention me with @${BOT_USERNAME} and ask away! 😎`,
