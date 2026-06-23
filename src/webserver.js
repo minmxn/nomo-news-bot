@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { fetchCombinedNews } = require('./news');
-const { generateSummaries, AI_CREDIT } = require('./groq');
+const { generateSummaries } = require('./groq');
 
 const STORY_COUNT = 10;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
@@ -35,7 +35,7 @@ function startWebServer() {
 
   app.get('/api/stories', async (req, res) => {
     try {
-      res.json({ stories: await getStories(), credit: AI_CREDIT });
+      res.json({ stories: await getStories() });
     } catch (err) {
       console.error('Web app /api/stories error:', err.message);
       res.status(500).json({ error: 'Could not load stories' });

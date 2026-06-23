@@ -12,10 +12,6 @@ const MODEL = 'openai/gpt-oss-120b';
 // quizzes, polls, news Q&A) don't need deep reasoning, so keep it low.
 const REASONING_EFFORT = 'low';
 
-// Attribution shown wherever an AI-generated summary is displayed.
-// Kept provider-agnostic so it stays accurate if the model/host changes.
-const AI_CREDIT = 'AI-generated summary';
-
 // Shared persona for free-text Q&A.
 // The formatting rules matter: replies are sent in a Telegram chat, which
 // does NOT support Markdown tables, headings (#) or HTML/<br> — those render
@@ -211,4 +207,4 @@ Provide exactly ${articles.length} summaries.`;
   return s.map(x => x.trim());
 }
 
-module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries, AI_CREDIT };
+module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries };
