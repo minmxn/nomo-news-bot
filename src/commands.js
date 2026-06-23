@@ -2,7 +2,7 @@ const fs = require('fs');
 const { fetchNews, fetchNewsByKeyword, fetchNewsByCountry, fetchCombinedNews } = require('./news');
 const { askGroq, chatGroq } = require('./groq');
 const { generateNewsPDF } = require('./pdf');
-const { formatNews, shouldRespond, cleanMessage, truncate } = require('./helpers');
+const { formatNews, shouldRespond, cleanMessage, truncate, sanitizeForTelegram } = require('./helpers');
 const { DAILY_LIMIT, getQuota } = require('./quota');
 const { BOT_USERNAME, ADMIN_ID } = require('../config');
 const { scheduleText, mainKeyboard } = require('./scheduler');
@@ -232,7 +232,15 @@ function registerCommands(bot) {
     try {
       const history = memory.getHistory(chatId, userId);
       const answer = await chatGroq(history, prompt);
-      bot.sendMessage(chatId, `🤖 ${answer}`, { parse_mode: 'Markdown' });
+      // Strip GFM (tables/headings/<br>) Telegram can't render, then try
+      // Markdown — and fall back to plain text if it still won't parse, so
+      // the send never fails silently.
+      const clean = sanitizeForTelegram(answer);
+      try {
+        await bot.sendMessage(chatId, `🤖 ${clean}`, { parse_mode: 'Markdown' });
+      } catch (sendErr) {
+        await bot.sendMessage(chatId, `🤖 ${clean}`);
+      }
       memory.append(chatId, userId, question, answer);
     } catch (err) {
       bot.sendMessage(chatId, `😬 Could not answer that. Error: ${err.message}`);

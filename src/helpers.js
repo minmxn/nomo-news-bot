@@ -7,6 +7,37 @@ function escapeMarkdown(text) {
   return text.replace(/([_*\[\]`])/g, '\\$1');
 }
 
+// Converts GitHub-flavoured Markdown that an LLM may emit into something
+// Telegram's legacy Markdown can actually display. Telegram has no tables,
+// headings or HTML, so those otherwise render as raw pipes / "###" / <br>.
+function sanitizeForTelegram(text) {
+  if (!text) return '';
+  let t = text
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')    // **bold** (GFM) → *bold* (Telegram)
+    .replace(/^#{1,6}\s*(.+?)\s*$/gm, '*$1*'); // # Heading → *Heading*
+
+  const out = [];
+  for (const line of t.split('\n')) {
+    const trimmed = line.trim();
+    // Drop horizontal rules (---, ***, ___).
+    if (/^([-*_])\1{2,}$/.test(trimmed)) continue;
+    // Markdown table rows start with "|".
+    if (trimmed.startsWith('|')) {
+      // Skip the separator row (|---|:--:|).
+      if (/^\|?[\s:|-]+\|?$/.test(trimmed)) continue;
+      // <br> inside a cell becomes a space so the row stays one line.
+      const cells = trimmed.split('|')
+        .map(c => c.trim().replace(/<br\s*\/?>/gi, ' '))
+        .filter(Boolean);
+      if (cells.length) out.push('• ' + cells.join(' — '));
+      continue;
+    }
+    // Outside a table, <br> is a real line break.
+    out.push(line.replace(/<br\s*\/?>/gi, '\n'));
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // Truncates text to a max length and adds an ellipsis.
 function truncate(text, max = 100) {
   if (!text) return '';
@@ -49,4 +80,4 @@ function cleanMessage(text) {
   return text.replace(`@${BOT_USERNAME}`, '').trim();
 }
 
-module.exports = { escapeMarkdown, truncate, buildNewsBody, formatNews, shouldRespond, cleanMessage };
+module.exports = { escapeMarkdown, sanitizeForTelegram, truncate, buildNewsBody, formatNews, shouldRespond, cleanMessage };
