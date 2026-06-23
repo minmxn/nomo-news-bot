@@ -58,16 +58,20 @@ Question: ${question}`;
 // Runs on CHAT_MODEL (compound), which web-searches when a question needs
 // current info — no reasoning_effort param (compound rejects it).
 async function chatGroq(history, question) {
+  // Compound injects web-search results into the request, which is very
+  // token-heavy and bumps the free-tier limits (413 too-large / 429 rate).
+  // Keep only the last couple of exchanges so the request stays lean.
+  const recentHistory = Array.isArray(history) ? history.slice(-4) : [];
   const messages = [
     { role: 'system', content: PERSONA },
-    ...history,
+    ...recentHistory,
     { role: 'user', content: question }
   ];
   const response = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
-    // Brevity is enforced by the persona; this is just a safety ceiling that
-    // still lets an explicit "deep dive" finish without truncating mid-sentence.
-    { model: CHAT_MODEL, messages, max_tokens: 900 },
+    // Lower ceiling keeps total tokens (and 429 risk) down; brevity is
+    // enforced by the persona anyway.
+    { model: CHAT_MODEL, messages, max_tokens: 600 },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
   );
   return response.data.choices[0].message.content;

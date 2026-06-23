@@ -243,7 +243,18 @@ function registerCommands(bot) {
       }
       memory.append(chatId, userId, question, answer);
     } catch (err) {
-      bot.sendMessage(chatId, `😬 Could not answer that. Error: ${err.message}`);
+      // Map the noisy Groq/HTTP errors to friendly, in-character replies.
+      const status = err.response && err.response.status;
+      let reply;
+      if (status === 429) {
+        reply = '🥵 Whoa, too many questions at once — I\'ve hit my rate limit. Give me ~30 seconds and ask again.';
+      } else if (status === 413) {
+        reply = '📚 That dug up way too much to chew on. Try asking something a bit more specific.';
+      } else {
+        reply = '😬 Couldn\'t pull that one off just now — give it another shot in a moment.';
+      }
+      console.error('Free-text Q&A error:', status || '', err.message);
+      bot.sendMessage(chatId, reply);
     }
   });
 }
