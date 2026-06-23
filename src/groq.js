@@ -88,7 +88,7 @@ Respond ONLY with valid JSON in exactly this shape:
     { "level": "🔴 Hard",   "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "C", "explanation": "1-2 sentence explanation" }
   ]
 }
-In each question make one option a light humorous wrong answer. Keep each option under 90 characters.`;
+Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   const data = await groqJSON(prompt);
   const qs = data && data.questions;
