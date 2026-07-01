@@ -11,18 +11,36 @@ const MAX_RESULTS = 10;
 const SNIPPET_CHARS = 600;
 const TIMEOUT_MS = 12000; // advanced search can be slow; give it room
 
-// One Tavily call at the given depth. Returns a context string ('' if empty).
-async function runSearch(query, searchDepth, timeRange, topic) {
+// High-quality finance sources to restrict to when the question is about
+// prices/markets, so we get live quote pages instead of stale blog spam.
+const FINANCE_DOMAINS = [
+  'finance.yahoo.com',
+  'stockanalysis.com',
+  'marketwatch.com',
+  'cnbc.com',
+  'reuters.com',
+  'bloomberg.com',
+  'investing.com',
+  'google.com', // Google Finance
+];
+
+// One Tavily call. Returns a context string ('' if empty). When `financeOnly`
+// is set, results are restricted to the finance sources above.
+async function runSearch(query, searchDepth, timeRange, topic, financeOnly) {
+  const body = {
+    query,
+    max_results: MAX_RESULTS,
+    search_depth: searchDepth,
+    time_range: timeRange,
+    include_answer: 'advanced', // Tavily's own synthesis of the results
+    include_raw_content: true,  // fuller page text so more numbers survive
+    topic,
+  };
+  if (financeOnly) body.include_domains = FINANCE_DOMAINS;
+
   const resp = await axios.post(
     'https://api.tavily.com/search',
-    {
-      query,
-      max_results: MAX_RESULTS,
-      search_depth: searchDepth,
-      time_range: timeRange,
-      include_answer: 'basic',
-      topic,
-    },
+    body,
     { headers: { Authorization: `Bearer ${TAVILY_API_KEY}` }, timeout: TIMEOUT_MS }
   );
 
@@ -30,12 +48,13 @@ async function runSearch(query, searchDepth, timeRange, topic) {
   const lines = [];
   if (data.answer) lines.push(`Summary: ${data.answer}`);
   for (const r of data.results || []) {
-    const snippet = String(r.content || '').replace(/\s+/g, ' ').trim().slice(0, SNIPPET_CHARS);
+    // Prefer Tavily's curated extract; fall back to raw page text if thin.
+    const text = (r.content && r.content.length > 80 ? r.content : r.raw_content) || r.content || '';
+    const snippet = String(text).replace(/\s+/g, ' ').trim().slice(0, SNIPPET_CHARS);
     if (!snippet) continue;
-    // Include the source domain so the model can attribute facts (e.g.
-    // "per Yahoo Finance") instead of vaguely saying "the latest data".
-    const source = domainOf(r.url);
-    lines.push(`• [${source}] ${r.title} — ${snippet}`);
+    // Prefix each result with its source domain so the model can attribute
+    // facts (e.g. "per Yahoo Finance") instead of vaguely saying "the data".
+    lines.push(`• [${domainOf(r.url)}] ${r.title} — ${snippet}`);
   }
   return lines.join('\n');
 }
@@ -46,11 +65,12 @@ function domainOf(url) {
   catch { return 'source'; }
 }
 
-// Ask Groq to infer both the time window and topic in one call.
-// Returns { timeRange: 'day'|'week'|'month'|'year', topic: 'news'|'general' }.
-// Falls back to { timeRange: 'week', topic: 'news' } on any error.
-async function inferSearchParams(query) {
-  const defaults = { timeRange: 'week', topic: 'news' };
+// Ask Groq to plan the search in ONE call: clean up the user's raw question
+// into a tight search query (fix typos, expand tickers, add keywords) and
+// classify it. Returns { query, timeRange, topic, finance }. Falls back to
+// sensible defaults (and the raw query) on any error.
+async function planSearch(rawQuery) {
+  const defaults = { query: rawQuery, timeRange: 'week', topic: 'news', finance: false };
   if (!GROQ_API_KEY) return defaults;
   try {
     const resp = await axios.post(
@@ -59,41 +79,58 @@ async function inferSearchParams(query) {
         model: 'openai/gpt-oss-120b',
         messages: [{
           role: 'user',
-          content: `You are a search assistant. Given this question, decide:
-1. time_range — how recent the info needs to be: day, week, month, or year
-2. topic — "news" for news/events/announcements, "general" for prices, data, stats, or factual lookups
+          content: `You turn a user's raw chat message into a clean web-search plan. Given the message below:
+1. query — rewrite it into a short, keyword-rich web search query. Fix typos, spell out company/ticker names (e.g. "palantir" → "Palantir PLTR"), and add words that get good results (e.g. "stock price today", "latest news"). No filler words.
+2. time_range — how recent the info needs to be: "day", "week", "month", or "year".
+3. topic — "news" for news/events/announcements, or "general" for prices, data, stats, or factual lookups.
+4. finance — true if the question is about a specific stock/crypto price, quote, or market value; otherwise false.
 
-Question: "${query}"
+User message: "${rawQuery}"
 
-Reply with exactly two words on one line, space-separated: <time_range> <topic>
-Example: day general`,
+Respond ONLY with JSON: {"query":"...","time_range":"day|week|month|year","topic":"news|general","finance":true|false}`,
         }],
-        max_tokens: 10,
+        max_tokens: 120,
         reasoning_effort: 'low',
+        response_format: { type: 'json_object' },
       },
-      { headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 5000 }
+      { headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 6000 }
     );
-    const parts = resp.data.choices[0].message.content.trim().toLowerCase().split(/\s+/);
-    const timeRange = ['day', 'week', 'month', 'year'].includes(parts[0]) ? parts[0] : defaults.timeRange;
-    const topic = ['news', 'general'].includes(parts[1]) ? parts[1] : defaults.topic;
-    return { timeRange, topic };
+    const p = JSON.parse(resp.data.choices[0].message.content);
+    return {
+      query: (typeof p.query === 'string' && p.query.trim()) ? p.query.trim() : rawQuery,
+      timeRange: ['day', 'week', 'month', 'year'].includes(p.time_range) ? p.time_range : defaults.timeRange,
+      topic: ['news', 'general'].includes(p.topic) ? p.topic : defaults.topic,
+      finance: p.finance === true,
+    };
   } catch (e) {
-    console.error('inferSearchParams failed:', e.message);
+    console.error('planSearch failed:', e.message);
   }
   return defaults;
 }
 
-async function webSearchContext(query) {
+async function webSearchContext(rawQuery) {
   if (!TAVILY_API_KEY) return '';
-  const { timeRange, topic } = await inferSearchParams(query);
-  const attempts = [['advanced', timeRange, topic], ['basic', timeRange, topic]];
-  for (const [depth, tr, tp] of attempts) {
+  const { query, timeRange, topic, finance } = await planSearch(rawQuery);
+  // For finance questions, try the curated finance sources first, then widen
+  // to the whole web if that comes back empty. Non-finance skips straight to
+  // the open web. Each tier also falls back from advanced→basic depth.
+  const attempts = finance
+    ? [
+        ['advanced', timeRange, topic, true],
+        ['advanced', timeRange, topic, false],
+        ['basic', timeRange, topic, false],
+      ]
+    : [
+        ['advanced', timeRange, topic, false],
+        ['basic', timeRange, topic, false],
+      ];
+  for (const [depth, tr, tp, fin] of attempts) {
     try {
-      const ctx = await runSearch(query, depth, tr, tp);
+      const ctx = await runSearch(query, depth, tr, tp, fin);
       if (ctx) return ctx;
-      console.error(`Tavily ${depth}/${tr}/${tp} returned no results for: ${query}`);
+      console.error(`Tavily ${depth}/${tr}/${tp}${fin ? '/finance' : ''} no results for: ${query}`);
     } catch (e) {
-      console.error(`Tavily ${depth}/${tr}/${tp} failed:`, e.response ? e.response.status : e.message);
+      console.error(`Tavily ${depth}/${tr}/${tp}${fin ? '/finance' : ''} failed:`, e.response ? e.response.status : e.message);
     }
   }
   return '';
