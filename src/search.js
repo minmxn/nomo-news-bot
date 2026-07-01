@@ -31,9 +31,19 @@ async function runSearch(query, searchDepth, timeRange, topic) {
   if (data.answer) lines.push(`Summary: ${data.answer}`);
   for (const r of data.results || []) {
     const snippet = String(r.content || '').replace(/\s+/g, ' ').trim().slice(0, SNIPPET_CHARS);
-    if (snippet) lines.push(`• ${r.title} — ${snippet}`);
+    if (!snippet) continue;
+    // Include the source domain so the model can attribute facts (e.g.
+    // "per Yahoo Finance") instead of vaguely saying "the latest data".
+    const source = domainOf(r.url);
+    lines.push(`• [${source}] ${r.title} — ${snippet}`);
   }
   return lines.join('\n');
+}
+
+// Extracts a readable source name from a URL (e.g. "finance.yahoo.com").
+function domainOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); }
+  catch { return 'source'; }
 }
 
 // Ask Groq to infer both the time window and topic in one call.
