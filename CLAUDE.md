@@ -1,6 +1,6 @@
 # Nomo News Bot
 
-A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, summarizes it with AI, and posts it on a daily schedule — as a swipeable card reader, a magazine-style PDF, polls, and quizzes.
+A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, summarizes it with AI, and posts it on a daily schedule — as a swipeable card reader, polls, and quizzes.
 
 ## Tech stack
 
@@ -8,7 +8,6 @@ A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, sum
 - **node-telegram-bot-api** — Telegram bot (long polling)
 - **axios** — HTTP (NewsAPI, Groq, image downloads)
 - **node-cron** — scheduled posts (all times Asia/Singapore)
-- **pdfkit** — PDF magazine generation
 - **NewsAPI** (newsapi.org) — news source (free tier: 100 calls/day, ~24h article delay)
 - **Groq** (runs `openai/gpt-oss-120b`) — AI summaries, briefings, polls, quizzes, and the free-text Q&A
 - **Tavily** (tavily.com) — web search that grounds the free-text Q&A in live info
@@ -68,8 +67,8 @@ bot.js
 │   │                      short, token-capped snippet block to ground the Q&A
 │   ├── groq.js            askGroq + chatGroq (free-text Q&A, takes web context)
 │   │                      + generateSummaries / generateMCQSet / generatePoll
-│   │                      (JSON mode, with timeout); MODEL = openai/gpt-oss-120b
-│   ├── pdf.js             generateNewsPDF() — magazine PDF (cover + stories)
+│   │                      + filterRelevantNews (JSON mode, with timeout);
+│   │                      MODEL = openai/gpt-oss-120b
 │   ├── quota.js           in-memory daily NewsAPI call counter
 │   ├── memory.js          per-user chat memory (10 exchanges, 60-min idle,
 │   │                      persisted to MEMORY_STORE) for the free-text Q&A
@@ -92,7 +91,7 @@ bot.js
 
 ### Key registrars
 
-- **commands.js** — `/start`, `/markets`, `/world`, `/tech`, `/briefing`, `/mood`, `/search`, `/stock`, `/sg`, `/us`, `/cn`, `/quota`, `/reset`, `/testpdf`, `/schedule`, the blocklist commands (`/block`, `/unblock`, `/blocked`, `/myid`), plus reply-keyboard buttons and an AI fallback for free-text questions. The free-text Q&A uses `chatGroq` with per-user memory ([memory.js](src/memory.js)), reply-context (anchors to the message a user replied to), and a live web-search grounding step ([search.js](src/search.js) via Tavily) so it answers current questions from real sources instead of fabricating. The persona ("NOMO") is punchy/short and only states facts from the web results or admits it can't confirm. `/read` is registered in reader.js and `/news` (Mini App launch) in bot.js. See [COMMANDS.md](COMMANDS.md).
+- **commands.js** — `/start`, `/markets`, `/world`, `/tech`, `/briefing`, `/mood`, `/search`, `/stock`, `/sg`, `/us`, `/cn`, `/quota`, `/reset`, `/schedule`, the blocklist commands (`/block`, `/unblock`, `/blocked`, `/myid`), plus reply-keyboard buttons and an AI fallback for free-text questions. The free-text Q&A uses `chatGroq` with per-user memory ([memory.js](src/memory.js)), reply-context (anchors to the message a user replied to), and a live web-search grounding step ([search.js](src/search.js) via Tavily) so it answers current questions from real sources instead of fabricating. The persona ("NOMO") is punchy/short and only states facts from the web results or admits it can't confirm. `/read` is registered in reader.js and `/news` (Mini App launch) in bot.js. See [COMMANDS.md](COMMANDS.md).
 - **scheduler.js** — cron jobs (see schedule below). `postNewsUpdate()` posts the carousel; `fallbackMCQSet()` rotates hardcoded questions when Groq is unavailable.
 - **reader.js** — the carousel. Sessions (articles + summaries + cached Telegram `file_id`s) live in a `Map`, persisted to `READER_STORE` (24h TTL). Images are pre-downloaded so `Next`/`Prev` (via `editMessageMedia`) are fast; cached `file_id`s make repeat views instant. Image source order: cached file_id → buffer → URL → placeholder.
 
@@ -113,9 +112,8 @@ bot.js
 ## Design notes / conventions
 
 - **AI is best-effort.** Every Groq-backed feature (summaries, poll, MCQ) has a silent fallback (description / hardcoded poll / hardcoded MCQ) and logs failures via `console.error`. Users always get content.
-- **API budget.** Scheduled posts use ~9 NewsAPI calls/day (1 each) to stay well under the 100/day free-tier cap. The combined query (`fetchCombinedNews`) replaced 3 separate category fetches. Quota is tracked in `quota.js` (in-memory, resets at SGT midnight).
-- **Blocked domains.** `news.js` drops blocked domains from every result via `blocklist.js` (defaults: biztoc.com, alltoc.com, medium.com; more added at runtime with `/block`). Fetchers request extras and trim so enough clean stories remain. There is no source whitelist — the feed pulls from all of NewsAPI minus the blocklist.
-- **PDFKit only supports JPEG/PNG.** Other image formats fall back to a navy "NOMO NEWS" placeholder. (Telegram itself handles WebP, so the carousel shows more real photos than the PDF.)
+- **API budget.** Scheduled posts use ~8 NewsAPI calls/day (1 each) to stay well under the 100/day free-tier cap. The combined query (`fetchCombinedNews`) replaced 3 separate category fetches. Quota is tracked in `quota.js` (in-memory, resets at SGT midnight).
+- **Feed quality.** `news.js` drops (1) blocked domains via `blocklist.js` (defaults include aggregators + non-news like pypi.org, github.com, fiction/blog/sports sites; more added at runtime with `/block`), (2) shopping/affiliate "deals" articles, and (3) obvious lifestyle fluff — all by keyword. `fetchCombinedNews` then runs a best-effort AI relevance pass (`filterRelevantNews` in `groq.js`) to drop subtler off-topic fluff from legit outlets. Queries use quoted phrases so partial words don't false-match. There is no source whitelist — the feed pulls from all of NewsAPI minus these filters.
 - **Times are always Asia/Singapore** via the `TZ` constant and `cron` `{ timezone: TZ }`.
 
 ## Known limitations

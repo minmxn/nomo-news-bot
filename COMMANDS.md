@@ -23,7 +23,6 @@
 | `/block <domain>` | Block a domain from the news (admin) — e.g. `/block junk.com` |
 | `/unblock <domain>` | Remove a domain from the blocklist (admin) |
 | `/myid` | Show your Telegram user ID (used to set `ADMIN_ID`) |
-| `/testpdf` | Generate a test PDF magazine |
 | `/schedule` | View the daily posting schedule |
 
 ## Keyboard Buttons
@@ -63,7 +62,6 @@ read - Tap-through news reader
 news - Open the fullscreen news reader
 reset - Clear your conversation memory
 quota - Check NewsAPI usage today
-testpdf - Generate a test PDF
 schedule - View the daily schedule
 ```
 
@@ -84,7 +82,6 @@ nomo-news-bot/
 │   ├── quota.js        # Daily NewsAPI call tracker
 │   ├── memory.js       # Per-user chat memory for free-text Q&A
 │   ├── blocklist.js    # Runtime domain blocklist (/block, /unblock)
-│   ├── pdf.js          # PDF magazine generator (used by /testpdf)
 │   └── helpers.js      # Shared utilities
 ├── data/
 │   ├── polls.js        # Daily polls (per weekday)

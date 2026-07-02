@@ -1,8 +1,6 @@
-const fs = require('fs');
 const { fetchNews, fetchNewsByKeyword, fetchNewsByCountry, fetchCombinedNews } = require('./news');
 const { askGroq, chatGroq } = require('./groq');
 const { webSearchContext } = require('./search');
-const { generateNewsPDF } = require('./pdf');
 const { formatNews, shouldRespond, cleanMessage, truncate, sanitizeForTelegram } = require('./helpers');
 const { DAILY_LIMIT, getQuota } = require('./quota');
 const { BOT_USERNAME, ADMIN_ID } = require('../config');
@@ -141,19 +139,6 @@ function registerCommands(bot) {
       bot.sendMessage(msg.chat.id, formatNews(articles, '🇨🇳 CHINA News'), { parse_mode: 'Markdown' });
     } catch (err) {
       bot.sendMessage(msg.chat.id, `😬 Could not fetch China news. Error: ${err.message}`);
-    }
-  });
-
-  bot.onText(/\/testpdf/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '📰 Generating a test PDF magazine...');
-    try {
-      const allArticles = await fetchCombinedNews(15);
-      const pdfPath = await generateNewsPDF(allArticles, 'Test Edition');
-      await bot.sendDocument(chatId, pdfPath, { caption: `📰 *Nomo News — Test Edition*\n\n_BUILT BY MIN_ ⚡`, parse_mode: 'Markdown' });
-      fs.unlinkSync(pdfPath);
-    } catch (err) {
-      bot.sendMessage(chatId, `😬 PDF test failed. Error: ${err.message}`);
     }
   });
 

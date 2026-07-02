@@ -209,7 +209,8 @@ Keep each option under 90 characters. Make the last option a lighthearted or neu
 
 // Writes a clear 2-3 sentence editorial summary for each article, in one
 // batched call. Returns an array of strings in the same order as `articles`.
-// Throws on failure so the PDF builder can fall back to the description.
+// Throws on failure so callers (the reader carousel and the Mini App web
+// server) can fall back to the article description.
 async function generateSummaries(articles) {
   const list = articles.map((a, i) =>
     `${i + 1}. ${a.title || 'Untitled'} — ${(a.description || '').slice(0, 240)}`

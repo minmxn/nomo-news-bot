@@ -80,8 +80,7 @@ function registerScheduler(bot) {
   //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
   //   6pm evening teaser:  1 (fetchCombinedNews via getStories)
   //   4x reader updates:   1 each = 4 (fetchCombinedNews via startReader)
-  //   /testpdf:            1 (fetchCombinedNews)
-  //   Total scheduled: ~9/day — leaves ~90 calls for user commands
+  //   Total scheduled: ~8/day — leaves ~90 calls for user commands
 
   // 8:00am SGT — Morning briefing (AI summary only)
   cron.schedule('0 8 * * *', async () => {
