@@ -152,9 +152,19 @@ function registerScheduler(bot) {
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
-      const body = mcqState.currentMCQs.map((q, i) =>
-        `${q.level}\n*Q${i + 1}: ${q.question}*\n*Correct Answer: ${q.answer}*\n📖 ${q.explanation}`
-      ).join('\n\n');
+      const body = mcqState.currentMCQs.map((q, i) => {
+        let block = `${q.level}\n*Q${i + 1}: ${q.question}*\n*Correct Answer: ${q.answer}*\n📖 ${q.explanation}`;
+        // When available, add a plain-language line for why each other option
+        // is wrong (best-effort field from the AI generator; see groq.js).
+        if (q.whyWrong) {
+          const wrongLines = ['A', 'B', 'C', 'D']
+            .filter(l => l !== q.answer && q.whyWrong[l])
+            .map(l => `❌ ${l}: ${q.whyWrong[l]}`)
+            .join('\n');
+          if (wrongLines) block += `\n${wrongLines}`;
+        }
+        return block;
+      }).join('\n\n');
       const text = `✅ *MCQ Answers Revealed!*\n\n${body}\n\n_BUILT BY MIN_ ⚡`;
       bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
     } catch (err) {

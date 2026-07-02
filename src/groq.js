@@ -130,25 +130,42 @@ Based on these recent headlines, create THREE multiple-choice questions connecte
 IMPORTANT — vary the topics: tie ALL THREE questions (the Easy one included) to a specific company, asset, market, region or event mentioned in TODAY'S headlines below. Do NOT fall back on generic evergreen textbook questions (e.g. "what does the S&P 500 track", "what does GDP stand for") — pick fresh angles that would differ from day to day.
 Each question must be self-contained (do not assume the reader saw a specific article).
 
+EXPLAIN FOR A COMPLETE BEGINNER — the reader may have ZERO finance knowledge. In every "explanation" and "whyWrong" entry, use plain everyday language, short sentences, and no jargon. If a finance term is unavoidable, add a quick plain-English gloss in brackets (e.g. "dividend (a cash payout to shareholders)"). Explain the idea like you would to a smart friend who has never invested.
+
+For each question provide:
+- "explanation": 1-3 plain sentences on WHY the correct answer is right.
+- "whyWrong": an object with one short plain-language sentence for EACH of the three incorrect option letters, saying why that option is wrong (the misconception it reflects or why it doesn't fit). Keys are the option letters that are NOT the answer.
+
 Recent headlines:
 ${headlines}
 ${avoidBlock}
 Respond ONLY with valid JSON in exactly this shape:
 {
   "questions": [
-    { "level": "🟢 Easy",   "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "A", "explanation": "1-2 sentence explanation" },
-    { "level": "🟡 Medium", "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "B", "explanation": "1-2 sentence explanation" },
-    { "level": "🔴 Hard",   "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "C", "explanation": "1-2 sentence explanation" }
+    { "level": "🟢 Easy",   "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "A", "explanation": "plain-language reason A is right", "whyWrong": { "B": "plain reason B is wrong", "C": "plain reason C is wrong", "D": "plain reason D is wrong" } },
+    { "level": "🟡 Medium", "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "B", "explanation": "plain-language reason B is right", "whyWrong": { "A": "...", "C": "...", "D": "..." } },
+    { "level": "🔴 Hard",   "question": "...", "options": ["A — ...","B — ...","C — ...","D — ..."], "answer": "C", "explanation": "plain-language reason C is right", "whyWrong": { "A": "...", "B": "...", "D": "..." } }
   ]
 }
 Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   // Higher temperature → more varied wording and angles day to day.
-  // Extra token headroom so three detailed questions never truncate.
-  const data = await groqJSON(prompt, 1500, 1.1);
+  // Extra token headroom so three questions with per-option explanations
+  // (correct + why each wrong one is wrong) never truncate.
+  const data = await groqJSON(prompt, 2600, 1.1);
   const qs = data && data.questions;
   const valid = Array.isArray(qs) && qs.length === 3 && qs.every(isValidMCQ);
   if (!valid) throw new Error('Malformed MCQ set from Groq');
+  // whyWrong is best-effort: keep it only when it's a proper object covering
+  // the three non-answer letters, else drop it so the answers post falls back
+  // to the plain explanation (never fail the whole set over it).
+  for (const q of qs) {
+    const letters = ['A', 'B', 'C', 'D'].filter(l => l !== q.answer);
+    const w = q.whyWrong;
+    const ok = w && typeof w === 'object' &&
+      letters.every(l => typeof w[l] === 'string' && w[l].trim());
+    if (!ok) delete q.whyWrong;
+  }
   // Force canonical level labels by position so a slightly off label from
   // the model doesn't matter (and the 3 tiers are always Easy/Medium/Hard).
   const levels = ['🟢 Easy', '🟡 Medium', '🔴 Hard'];
