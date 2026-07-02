@@ -152,7 +152,7 @@ function registerScheduler(bot) {
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
-      const body = mcqState.currentMCQs.map((q, i) => {
+      const blocks = mcqState.currentMCQs.map((q, i) => {
         let block = `${q.level}\n*Q${i + 1}: ${q.question}*\n*Correct Answer: ${q.answer}*\n📖 ${q.explanation}`;
         // When available, add a plain-language line for why each other option
         // is wrong (best-effort field from the AI generator; see groq.js).
@@ -161,12 +161,21 @@ function registerScheduler(bot) {
             .filter(l => l !== q.answer && q.whyWrong[l])
             .map(l => `❌ ${l}: ${q.whyWrong[l]}`)
             .join('\n');
-          if (wrongLines) block += `\n${wrongLines}`;
+          if (wrongLines) block += `\n\n${wrongLines}`;
         }
         return block;
-      }).join('\n\n');
-      const text = `✅ *MCQ Answers Revealed!*\n\n${body}\n\n_BUILT BY MIN_ ⚡`;
-      bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+      });
+      const full = `✅ *MCQ Answers Revealed!*\n\n${blocks.join('\n\n')}\n\n_BUILT BY MIN_ ⚡`;
+      // Normally all three fit in one message (~2.5k chars). Only if the
+      // explanations ever run unusually long and exceed Telegram's 4096-char
+      // cap do we fall back to one message per question.
+      if (full.length <= 4096) {
+        await bot.sendMessage(CHAT_ID, full, { parse_mode: 'Markdown' });
+      } else {
+        await bot.sendMessage(CHAT_ID, '✅ *MCQ Answers Revealed!*', { parse_mode: 'Markdown' });
+        for (const block of blocks) await bot.sendMessage(CHAT_ID, block, { parse_mode: 'Markdown' });
+        await bot.sendMessage(CHAT_ID, '_BUILT BY MIN_ ⚡', { parse_mode: 'Markdown' });
+      }
     } catch (err) {
       console.error('MCQ answer error:', err.message);
     }

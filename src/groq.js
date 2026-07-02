@@ -125,16 +125,27 @@ HARD RULE: every one of your three questions must be about a DIFFERENT subject f
 Based on these recent headlines, create THREE multiple-choice questions connected to the news, at three clearly different difficulty levels:
 - 🟢 Easy: beginner-friendly, tests one basic concept.
 - 🟡 Medium: intermediate, needs real understanding of how something works.
-- 🔴 Hard: genuinely difficult, expert/CFA-professional level — test deep conceptual understanding, mechanisms, or second-order / knock-on effects, with subtle distractors. PREFER reasoning over arithmetic: do NOT pose multi-step numerical problems (e.g. forward pricing, discounting, bond math) — they tend to come out internally inconsistent. If a number is unavoidable, keep the calculation trivial and make sure the stated correct answer is unambiguously and verifiably right. This question should challenge even finance professionals.
+- 🔴 Hard: challenging and thought-provoking — tests a real mechanism or a second-order effect that makes the reader think — BUT it must be verifiably correct. CORRECTNESS BEATS CLEVERNESS: a hard question that is subtly WRONG is far worse than a clearly-correct one that is a bit easier. So:
+  • Do NOT chase "trick even the professionals" difficulty with subtle distractors where two options are both arguably right — that is exactly how questions end up wrong. Difficulty must come from testing a real concept the reader has to reason about, NOT from a coin-flip between two defensible answers.
+  • Test a SINGLE clear mechanism. Do NOT build a speculative "given X, Y and Z, which chain of effects..." question stringing several events together.
+  • The correct answer must be the TEXTBOOK-correct, standard explanation that any finance textbook or professional would confirm with zero debate — not a contrarian or "well, actually" take. (E.g. for why a weak dollar lifts gold: the standard answer is that dollar-priced gold becomes CHEAPER for buyers using other currencies, so demand rises. Do not mark that wrong.)
+  • The three wrong options must be DEFINITIVELY wrong — clear, common misconceptions a knowledgeable person can rule out, not "also true" statements.
+  • Before finalising, sanity-check that the correct answer's mechanism points in the right DIRECTION (finance relationships are easy to state backwards). If you are not 100% sure an option is textbook-correct, choose a different, safer question you ARE sure about.
+  • PREFER reasoning over arithmetic: no multi-step numerical problems (forward pricing, discounting, bond math). If a number is unavoidable, keep the calculation trivial and verifiably right.
+  • AVOID currency/FX-denomination questions — anything of the form "how does a weaker/stronger dollar affect the price of gold / Bitcoin / commodity X". These hinge on subtle denomination effects that are very easy to state backwards, so steer clear of them entirely. Prefer mechanisms that are clean and unambiguous, e.g.: what a specific metric measures and why it moved, the direct effect of a central-bank rate change on borrowing or bond prices, how supply/demand shifted for a named asset, why a company's margins or earnings changed, or a clear cause→effect from a specific headline.
 
 IMPORTANT — vary the topics: tie ALL THREE questions (the Easy one included) to a specific company, asset, market, region or event mentioned in TODAY'S headlines below. Do NOT fall back on generic evergreen textbook questions (e.g. "what does the S&P 500 track", "what does GDP stand for") — pick fresh angles that would differ from day to day.
 Each question must be self-contained (do not assume the reader saw a specific article).
 
-EXPLAIN FOR A COMPLETE BEGINNER — the reader may have ZERO finance knowledge. In every "explanation" and "whyWrong" entry, use plain everyday language, short sentences, and no jargon. If a finance term is unavoidable, add a quick plain-English gloss in brackets (e.g. "dividend (a cash payout to shareholders)"). Explain the idea like you would to a smart friend who has never invested.
+EXPLAIN FOR A COMPLETE BEGINNER — assume the reader has ZERO finance knowledge and has never invested. Teach, don't just assert. Rules for ALL explanation text:
+- Use plain everyday language and short sentences.
+- Explain EVERY finance term you use, in brackets, right where it appears — even common-sounding ones. E.g. "market cap (the total value of a company, found by multiplying its share price by how many shares exist)", "revenue (the total money a company takes in from sales)", "interest rate (the cost of borrowing money, set as a percentage)". Never assume a term like "shares", "balance sheet", "earnings", "yield" or "dividend" is already understood.
+- Write like you're kindly teaching a curious friend who is smart but knows nothing about markets.
 
 For each question provide:
-- "explanation": 1-3 plain sentences on WHY the correct answer is right.
-- "whyWrong": an object with one short plain-language sentence for EACH of the three incorrect option letters, saying why that option is wrong (the misconception it reflects or why it doesn't fit). Keys are the option letters that are NOT the answer.
+- "explanation": 2-4 sentences that TEACH why the correct answer is right — explain the underlying idea from scratch, defining each term, so the reader actually learns the concept (not just "A is correct because it's the definition").
+- "whyWrong": an object with an entry for EACH of the three incorrect option letters. Each entry must be genuinely educational: first explain in plain words what that wrong option actually refers to (define its terms too), THEN why that isn't the answer to this question. The reader should come away understanding all four options, not just being told "nope". Keys are the option letters that are NOT the answer.
+Example of a GOOD whyWrong entry (teaches the concept): "B: 'Cash on hand' means the money a company keeps in its bank accounts right now. That's useful to know, but it's usually far smaller than the company's market cap and measures something different — money available today, not the total value of the whole company." Example of a BAD one (too curt, teaches nothing): "B: Cash on hand is a balance-sheet item, not market cap."
 
 Recent headlines:
 ${headlines}
@@ -150,9 +161,9 @@ Respond ONLY with valid JSON in exactly this shape:
 Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   // Higher temperature → more varied wording and angles day to day.
-  // Extra token headroom so three questions with per-option explanations
-  // (correct + why each wrong one is wrong) never truncate.
-  const data = await groqJSON(prompt, 2600, 1.1);
+  // Generous token headroom: three questions, each with a teaching
+  // explanation plus a mini-lesson for all three wrong options, needs room.
+  const data = await groqJSON(prompt, 4000, 1.1);
   const qs = data && data.questions;
   const valid = Array.isArray(qs) && qs.length === 3 && qs.every(isValidMCQ);
   if (!valid) throw new Error('Malformed MCQ set from Groq');
