@@ -239,4 +239,35 @@ Provide exactly ${articles.length} summaries.`;
   return s.map(x => x.trim());
 }
 
-module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries };
+// Best-effort relevance filter. Given articles, asks Groq which headlines are
+// genuine finance/world/tech NEWS (vs lifestyle, listicles, opinion, sports,
+// human-interest fluff) and returns only those, in original order. On ANY
+// failure — no key, timeout, bad JSON, or an empty/over-aggressive result —
+// it returns the input unchanged, so it can never starve the feed.
+async function filterRelevantNews(articles) {
+  if (!GROQ_API_KEY || !Array.isArray(articles) || articles.length === 0) return articles;
+  const list = articles.map((a, i) => `${i + 1}. ${a.title || ''}`).join('\n');
+  const prompt = `You are the editor of a finance, world-affairs and technology news channel. Below are ${articles.length} numbered headlines. For EACH one, decide if it is GENUINE hard news about markets, the economy, business, finance, technology, science, world affairs or politics.
+Mark it false if it is: lifestyle, a personal essay ("I moved to…", "I tried…"), travel, food/recipes, shopping/deals, a product roundup, an "N things/tips/ways" listicle, human-interest fluff, celebrity, sports, a horoscope, an opinion/blog post, or a how-to guide.
+Headlines:
+${list}
+Respond ONLY with JSON containing a "news" array of EXACTLY ${articles.length} booleans, in the same order (true = keep as news, false = drop):
+{"news":[true,false,true, ...]}`;
+  try {
+    // temperature 0 → deterministic classification. Ordered boolean array
+    // (like generateSummaries) avoids the model merging/miscounting indices.
+    // Generous max_tokens: gpt-oss "reasons" before answering, and a tight
+    // budget got consumed by reasoning and returned an empty (invalid) body.
+    const data = await groqJSON(prompt, 3000, 0);
+    const verdicts = data && data.news;
+    // Must be a boolean array of the right length, or we can't trust it.
+    if (!Array.isArray(verdicts) || verdicts.length !== articles.length) return articles;
+    const filtered = articles.filter((_, i) => verdicts[i] !== false);
+    return filtered.length ? filtered : articles;
+  } catch (e) {
+    console.error('filterRelevantNews failed:', e.message);
+    return articles;
+  }
+}
+
+module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries, filterRelevantNews };

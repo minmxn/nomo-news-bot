@@ -2,6 +2,7 @@ const axios = require('axios');
 const { NEWS_API_KEY } = require('../config');
 const { trackApiCall } = require('./quota');
 const { isBlocked } = require('./blocklist');
+const { filterRelevantNews } = require('./groq');
 
 // Retail/affiliate "deals" signals. NewsAPI's broad query + popularity sort
 // pulls in shopping roundups ("Deals: iPad $350 off", "50% off", "stock up …
@@ -25,11 +26,29 @@ function isCommercialDeal(a) {
   return DEAL_SIGNALS.some(re => re.test(text));
 }
 
-// Removes blocked-domain articles AND shopping/deals content from a NewsAPI
-// response. The blocklist is managed at runtime via /block and /unblock
-// (see blocklist.js).
+// Obvious lifestyle/fluff signals — cheap first pass before the AI relevance
+// filter. Kept deliberately HIGH-PRECISION (only clear fluff) so the AI step
+// handles the subtler cases and we don't wrongly drop real news.
+const FLUFF_SIGNALS = [
+  /^\s*\d+\s+(?:things|ways|products|items|gadgets|habits|foods|snacks|places|tips|hacks|tricks|secrets)\b/i, // listicles
+  /\bI\s+(?:moved|tried|quit|left|switched|lived|worked at|visited|stayed|ate|wore|spent a)\b/i,              // personal essays
+  /\baccording to (?:a|an)\s+(?:flight attendant|barista|chef|waiter|waitress|bartender|nutritionist|trainer|dietitian|therapist|pilot)\b/i,
+  /\b(?:horoscopes?|zodiac|recipes?)\b/i,
+];
+
+// True if an article looks like lifestyle/human-interest fluff.
+function isFluff(a) {
+  const text = `${a.title || ''} ${a.description || ''}`;
+  return FLUFF_SIGNALS.some(re => re.test(text));
+}
+
+// Removes blocked-domain articles, shopping/deals content, and obvious
+// lifestyle fluff from a NewsAPI response. The blocklist is managed at runtime
+// via /block and /unblock (see blocklist.js). Subtler off-topic fluff is caught
+// later by the AI relevance filter (see fetchCombinedNews).
 function filterArticles(articles) {
-  return (articles || []).filter(a => a && a.url && !isBlocked(a.url) && !isCommercialDeal(a));
+  return (articles || []).filter(a =>
+    a && a.url && !isBlocked(a.url) && !isCommercialDeal(a) && !isFluff(a));
 }
 
 async function fetchNews(category, pageSize = 10) {
@@ -83,12 +102,18 @@ async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysA
       language: 'en',
       sortBy,
       from,
-      // Over-fetch so enough remain after blocked-domain + deals filtering.
+      // Over-fetch so enough remain after blocked-domain + deals + fluff
+      // filtering and the AI relevance pass below.
       pageSize: Math.min(pageSize + 20, 100),
       apiKey: NEWS_API_KEY
     }
   });
-  return filterArticles(response.data.articles).slice(0, pageSize);
+  // Cheap filters first (blocklist + deals + obvious fluff), then an AI
+  // relevance pass to drop subtler off-topic fluff from legit outlets
+  // (best-effort — returns everything if Groq is unavailable), then trim.
+  const clean = filterArticles(response.data.articles);
+  const relevant = await filterRelevantNews(clean);
+  return relevant.slice(0, pageSize);
 }
 
 module.exports = { fetchNews, fetchNewsByKeyword, fetchNewsByCountry, fetchCombinedNews };
