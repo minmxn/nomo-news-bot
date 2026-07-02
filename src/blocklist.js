@@ -1,8 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 
-// Always-blocked junk aggregators (can't be removed).
-const DEFAULTS = ['biztoc.com', 'alltoc.com', 'medium.com'];
+// Always-blocked non-news / junk sources (can't be removed). Covers content
+// aggregators plus non-news sources that slip through NewsAPI's broad query:
+// code-package registries, personal blogs, fiction magazines, sports/lifestyle
+// blogs. Add more at runtime with /block.
+const DEFAULTS = [
+  'biztoc.com', 'alltoc.com', 'medium.com',
+  'pypi.org', 'npmjs.com', 'github.com',        // code / package registries
+  'freethoughtblogs.com',                        // personal blog network
+  'clarkesworldmagazine.com', 'tor.com',         // fiction magazines
+  'thefootballfaithful.com',                     // sports blog
+  'uncrate.com',                                 // shopping / lifestyle catalog
+];
 
 // Set BLOCKLIST_STORE to a Railway volume path to survive redeploys.
 const STORE_PATH = process.env.BLOCKLIST_STORE || path.join(__dirname, '..', 'blocked-domains.json');
