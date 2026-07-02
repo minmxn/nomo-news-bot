@@ -91,4 +91,14 @@ function cleanMessage(text) {
   return text.replace(`@${BOT_USERNAME}`, '').trim();
 }
 
-module.exports = { escapeMarkdown, sanitizeForTelegram, truncate, buildNewsBody, formatNews, shouldRespond, cleanMessage };
+// Strips a trailing domain extension from a source name so "Pypi.org" shows
+// as "Pypi" and "Gizmodo.com" as "Gizmodo". Only a recognised TLD suffix is
+// removed, so normal names ("BBC News", "The Verge", "9to5Mac", "U.S. News")
+// are left untouched.
+function cleanSourceName(name) {
+  return String(name || '')
+    .replace(/\.(com|org|net|io|co|news|gov|edu|info|biz|tv|me|us|uk|ai|app|xyz)$/i, '')
+    .trim();
+}
+
+module.exports = { escapeMarkdown, sanitizeForTelegram, truncate, buildNewsBody, formatNews, shouldRespond, cleanMessage, cleanSourceName };

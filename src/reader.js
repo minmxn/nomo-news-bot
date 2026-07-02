@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { fetchCombinedNews } = require('./news');
 const { generateSummaries } = require('./groq');
-const { truncate } = require('./helpers');
+const { truncate, cleanSourceName } = require('./helpers');
 
 // Fallback image Telegram can fetch when an article has no usable photo.
 const PLACEHOLDER = 'https://placehold.co/1024x576/1a1a2e/FFD700.png?text=NOMO+NEWS';
@@ -83,7 +83,7 @@ function escHtml(text) {
 
 // Caption uses HTML so the headline can be a clickable link to the article.
 function buildCaption(article, summary, idx, total) {
-  const src = escHtml((article.source && article.source.name) || 'Nomo Wire');
+  const src = escHtml(cleanSourceName((article.source && article.source.name) || 'Nomo Wire'));
   const badge = idx === 0 ? '🔴 TOP STORY · ' : '📰 ';
   const title = escHtml(truncate(article.title, 180));
   const body = escHtml(truncate(summary || article.description || 'No summary available.', 600));

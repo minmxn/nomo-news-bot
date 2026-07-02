@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const { fetchCombinedNews } = require('./news');
 const { generateSummaries } = require('./groq');
+const { cleanSourceName } = require('./helpers');
 
 const STORY_COUNT = 10;
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
@@ -19,7 +20,7 @@ async function getStories() {
   });
   const stories = articles.map((a, i) => ({
     title: a.title || 'Untitled',
-    source: (a.source && a.source.name) || 'Nomo Wire',
+    source: cleanSourceName((a.source && a.source.name) || 'Nomo Wire'),
     summary: summaries[i] || a.description || '',
     ai: Boolean(summaries[i] && summaries[i].trim()),
     image: a.urlToImage || '',
