@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { TZ, CHAT_ID, WEBAPP_URL } = require('../config');
+const { TZ, CHAT_ID, WEBAPP_URL, ADMIN_ID } = require('../config');
 const { fetchCombinedNews } = require('./news');
 const { askGroq, generateMCQSet, generatePoll } = require('./groq');
 const { startReader } = require('./reader');
@@ -59,6 +59,40 @@ function fallbackMCQSet() {
     return pool[dayNum % pool.length];
   };
   return [pick('🟢 Easy'), pick('🟡 Medium'), pick('🔴 Hard')];
+}
+
+// ─── MCQ RENDERING (shared by the cron jobs and /testquiz) ────────
+
+// The questions body (levels, questions, options) — no header/footer.
+function renderMCQBody(mcqs) {
+  return mcqs.map((q, i) =>
+    `${q.level}\n*Q${i + 1}: ${q.question}*\n${q.options.join('\n')}`
+  ).join('\n\n');
+}
+
+// Posts the answers: correct answer, plain-language explanation, and a line
+// per wrong option (when whyWrong is present). One message if it fits under
+// Telegram's 4096-char cap, else one message per question.
+async function postMCQAnswers(bot, chatId, mcqs) {
+  const blocks = mcqs.map((q, i) => {
+    let block = `${q.level}\n*Q${i + 1}: ${q.question}*\n*Correct Answer: ${q.answer}*\n📖 ${q.explanation}`;
+    if (q.whyWrong) {
+      const wrongLines = ['A', 'B', 'C', 'D']
+        .filter(l => l !== q.answer && q.whyWrong[l])
+        .map(l => `❌ ${l}: ${q.whyWrong[l]}`)
+        .join('\n');
+      if (wrongLines) block += `\n\n${wrongLines}`;
+    }
+    return block;
+  });
+  const full = `✅ *MCQ Answers Revealed!*\n\n${blocks.join('\n\n')}\n\n_BUILT BY MIN_ ⚡`;
+  if (full.length <= 4096) {
+    await bot.sendMessage(chatId, full, { parse_mode: 'Markdown' });
+  } else {
+    await bot.sendMessage(chatId, '✅ *MCQ Answers Revealed!*', { parse_mode: 'Markdown' });
+    for (const block of blocks) await bot.sendMessage(chatId, block, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, '_BUILT BY MIN_ ⚡', { parse_mode: 'Markdown' });
+  }
 }
 
 // ─── NEWS UPDATE HELPER (posts the swipeable story reader) ────────
@@ -140,10 +174,7 @@ function registerScheduler(bot) {
         mcqState.currentMCQs = fallbackMCQSet();
       }
 
-      const body = mcqState.currentMCQs.map((q, i) =>
-        `${q.level}\n*Q${i + 1}: ${q.question}*\n${q.options.join('\n')}`
-      ).join('\n\n');
-      const text = `🧠 *Daily Market Quiz!* — 3 Questions\n\n${body}\n\n_Reply with your answers! Revealed at 11am_ ⏰`;
+      const text = `🧠 *Daily Market Quiz!* — 3 Questions\n\n${renderMCQBody(mcqState.currentMCQs)}\n\n_Reply with your answers! Revealed at 11am_ ⏰`;
       bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
     } catch (err) {
       console.error('MCQ error:', err.message);
@@ -154,30 +185,7 @@ function registerScheduler(bot) {
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
-      const blocks = mcqState.currentMCQs.map((q, i) => {
-        let block = `${q.level}\n*Q${i + 1}: ${q.question}*\n*Correct Answer: ${q.answer}*\n📖 ${q.explanation}`;
-        // When available, add a plain-language line for why each other option
-        // is wrong (best-effort field from the AI generator; see groq.js).
-        if (q.whyWrong) {
-          const wrongLines = ['A', 'B', 'C', 'D']
-            .filter(l => l !== q.answer && q.whyWrong[l])
-            .map(l => `❌ ${l}: ${q.whyWrong[l]}`)
-            .join('\n');
-          if (wrongLines) block += `\n\n${wrongLines}`;
-        }
-        return block;
-      });
-      const full = `✅ *MCQ Answers Revealed!*\n\n${blocks.join('\n\n')}\n\n_BUILT BY MIN_ ⚡`;
-      // Normally all three fit in one message (~2.5k chars). Only if the
-      // explanations ever run unusually long and exceed Telegram's 4096-char
-      // cap do we fall back to one message per question.
-      if (full.length <= 4096) {
-        await bot.sendMessage(CHAT_ID, full, { parse_mode: 'Markdown' });
-      } else {
-        await bot.sendMessage(CHAT_ID, '✅ *MCQ Answers Revealed!*', { parse_mode: 'Markdown' });
-        for (const block of blocks) await bot.sendMessage(CHAT_ID, block, { parse_mode: 'Markdown' });
-        await bot.sendMessage(CHAT_ID, '_BUILT BY MIN_ ⚡', { parse_mode: 'Markdown' });
-      }
+      await postMCQAnswers(bot, CHAT_ID, mcqState.currentMCQs);
     } catch (err) {
       console.error('MCQ answer error:', err.message);
     }
@@ -197,6 +205,38 @@ function registerScheduler(bot) {
       console.error('Evening news error:', err.message);
     }
   }, cronOpts);
+
+  // /testquiz — on-demand quiz for testing. Runs the REAL 10am generation
+  // path and reports whether it came from the AI or the hardcoded fallback
+  // (and why it fell back), then posts the questions and answers to the chat
+  // where it was run. Does NOT touch mcqState or the recent-question history,
+  // so it never disturbs the real daily quiz. Admin-gated when ADMIN_ID is set.
+  bot.onText(/^\/testquiz(?:@\w+)?$/, async (msg) => {
+    const chatId = msg.chat.id;
+    if (ADMIN_ID && String(msg.from && msg.from.id) !== String(ADMIN_ID)) {
+      return bot.sendMessage(chatId, '🔒 Only the admin can run /testquiz.');
+    }
+    bot.sendChatAction(chatId, 'typing').catch(() => {});
+    let mcqs, source;
+    try {
+      // Same fetch as the 10am cron (aiFilter off — just need headlines).
+      const articles = await fetchCombinedNews(50, 'publishedAt', 2, false);
+      const headlines = articles.map(a => a.title).join('\n');
+      mcqs = await generateMCQSet(headlines, mcqHistory.recent());
+      source = '🤖 AI-generated from today’s headlines';
+    } catch (e) {
+      console.error('testquiz generation failed, using fallback:', e.message);
+      mcqs = fallbackMCQSet();
+      source = `⚠️ AI generation failed (${e.response ? 'HTTP ' + e.response.status : e.message}) — showing hardcoded fallback`;
+    }
+    try {
+      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_\n\n${renderMCQBody(mcqs)}`, { parse_mode: 'Markdown' });
+      await postMCQAnswers(bot, chatId, mcqs);
+    } catch (err) {
+      console.error('testquiz post error:', err.message);
+      bot.sendMessage(chatId, `😬 Test quiz failed to send: ${err.message}`);
+    }
+  });
 
   // News updates at fixed SGT times: 12pm, 3pm, 8pm, 10pm
   cron.schedule('0 12 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 12pm*').catch(e => console.error(e.message)), cronOpts);
