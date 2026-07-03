@@ -58,7 +58,9 @@ function registerCommands(bot) {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, '☀️ Hang tight — putting together your briefing...');
     try {
-      const articles = await fetchCombinedNews(15);
+      // Context-only fetch (headlines for the summary) — skip the AI relevance
+      // filter to save a Groq call; fluff in a headline list barely matters here.
+      const articles = await fetchCombinedNews(15, 'popularity', 2, false);
       const allNews = articles.map(a => a.title).join('\n');
       const summary = await askGroq('Give me a short news briefing based on these headlines. Keep it friendly, simple and easy to understand.', allNews);
       bot.sendMessage(chatId, `☀️ *Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' });

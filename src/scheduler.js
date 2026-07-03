@@ -85,7 +85,7 @@ function registerScheduler(bot) {
   // 8:00am SGT — Morning briefing (AI summary only)
   cron.schedule('0 8 * * *', async () => {
     try {
-      const allArticles = await fetchCombinedNews(15);
+      const allArticles = await fetchCombinedNews(15, 'popularity', 2, false);
       const allNews = allArticles.map(a => a.title).join('\n');
       const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
       await bot.sendMessage(CHAT_ID, `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' });
@@ -105,7 +105,7 @@ function registerScheduler(bot) {
 
       let poll;
       try {
-        const articles = await fetchCombinedNews(15);
+        const articles = await fetchCombinedNews(15, 'popularity', 2, false);
         const headlines = articles.map(a => a.title).join('\n');
         poll = await generatePoll(headlines);
       } catch (genErr) {
@@ -127,8 +127,11 @@ function registerScheduler(bot) {
       try {
         // Pull a wide pool of the newest stories (still 1 NewsAPI call) so
         // there's fresh material to pick from, and hand Groq the recent
-        // questions to steer it off repeated topics.
-        const articles = await fetchCombinedNews(50, 'publishedAt');
+        // questions to steer it off repeated topics. Skip the AI relevance
+        // filter here (aiFilter=false) — we only need raw headlines, and
+        // avoiding that extra Groq call keeps us clear of the rate limit
+        // right before the quiz-generation call.
+        const articles = await fetchCombinedNews(50, 'publishedAt', 2, false);
         const headlines = articles.map(a => a.title).join('\n');
         mcqState.currentMCQs = await generateMCQSet(headlines, mcqHistory.recent());
         mcqHistory.record(mcqState.currentMCQs);

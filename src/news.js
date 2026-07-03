@@ -91,7 +91,12 @@ async function fetchNewsByCountry(country, pageSize = 5) {
 // date filter, sortBy=popularity ranks across NewsAPI's whole ~month window
 // and returns the SAME most-popular articles every day (the feed never moves).
 // A sliding recent window keeps the content fresh day to day.
-async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysAgo = 2) {
+// aiFilter: run the best-effort AI relevance pass (drops subtler fluff). Keep
+// it ON for user-facing feeds (reader carousel, Mini App, teaser). Turn it OFF
+// for context-only fetches (briefing/poll/quiz) — they just need raw headlines
+// for topic ideas, and skipping it avoids a heavy Groq call right before those
+// features' own Groq call, which was tripping the rate limit → fallbacks.
+async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysAgo = 2, aiFilter = true) {
   trackApiCall();
   const from = new Date(Date.now() - fromDaysAgo * 86400000).toISOString().slice(0, 10);
   const response = await axios.get('https://newsapi.org/v2/everything', {
@@ -108,11 +113,11 @@ async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysA
       apiKey: NEWS_API_KEY
     }
   });
-  // Cheap filters first (blocklist + deals + obvious fluff), then an AI
-  // relevance pass to drop subtler off-topic fluff from legit outlets
+  // Cheap filters first (blocklist + deals + obvious fluff), then optionally
+  // an AI relevance pass to drop subtler off-topic fluff from legit outlets
   // (best-effort — returns everything if Groq is unavailable), then trim.
   const clean = filterArticles(response.data.articles);
-  const relevant = await filterRelevantNews(clean);
+  const relevant = aiFilter ? await filterRelevantNews(clean) : clean;
   return relevant.slice(0, pageSize);
 }
 
