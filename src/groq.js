@@ -114,10 +114,14 @@ function isValidMCQ(q) {
 // Throws if Groq is down/slow or returns malformed questions — the caller
 // is expected to fall back to hardcoded ones.
 async function generateMCQSet(headlines, recentQuestions = []) {
-  const avoidBlock = recentQuestions.length
+  // Cap the avoid-list to the most recent 15 so the prompt stays small — a
+  // bloated prompt + a big max_tokens reservation trips Groq's per-minute
+  // token limit (HTTP 413) and forces the fallback.
+  const avoid = recentQuestions.slice(-15);
+  const avoidBlock = avoid.length
     ? `\n────────────────────────────────────────
 🚫 BANNED SUBJECTS — these questions were already asked on recent days:
-${recentQuestions.map(q => `- ${q}`).join('\n')}
+${avoid.map(q => `- ${q}`).join('\n')}
 
 HARD RULE: every one of your three questions must be about a DIFFERENT subject from every banned question above. A subject is banned even if you reword it, change the difficulty, flip the angle, or focus on a different detail of the same company / event / asset / metric. If a headline below relates to any banned subject (e.g. the same company, the same conflict, the same IPO, the same commodity), SKIP that headline and choose a different one. There are many headlines — use the less obvious ones.
 ────────────────────────────────────────\n`
@@ -163,11 +167,11 @@ Respond ONLY with valid JSON in exactly this shape:
 Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   // Higher temperature → more varied wording and angles day to day.
-  // Generous token headroom AND a longer timeout: three questions, each with
-  // a teaching explanation plus a mini-lesson for all three wrong options, is
-  // a big generation — too tight a budget/timeout truncates or times out and
-  // forces the hardcoded fallback (which is why some days lost the whyWrong).
-  const data = await groqJSON(prompt, 6000, 1.1, 45000);
+  // max_tokens 4000: enough for 3 questions with per-option explanations plus
+  // reasoning, but low enough that prompt + reserved tokens stay under Groq's
+  // per-minute token cap (a 6000 reservation was hitting HTTP 413). Longer
+  // timeout so the sizeable generation doesn't time out into the fallback.
+  const data = await groqJSON(prompt, 4000, 1.1, 45000);
   const qs = data && data.questions;
   const valid = Array.isArray(qs) && qs.length === 3 && qs.every(isValidMCQ);
   if (!valid) throw new Error('Malformed MCQ set from Groq');

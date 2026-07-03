@@ -159,13 +159,13 @@ function registerScheduler(bot) {
   cron.schedule('0 10 * * *', async () => {
     try {
       try {
-        // Pull a wide pool of the newest stories (still 1 NewsAPI call) so
-        // there's fresh material to pick from, and hand Groq the recent
-        // questions to steer it off repeated topics. Skip the AI relevance
-        // filter here (aiFilter=false) — we only need raw headlines, and
-        // avoiding that extra Groq call keeps us clear of the rate limit
-        // right before the quiz-generation call.
-        const articles = await fetchCombinedNews(50, 'publishedAt', 2, false);
+        // Pull a pool of the newest stories (still 1 NewsAPI call) so there's
+        // fresh material to pick from, and hand Groq the recent questions to
+        // steer it off repeated topics. 25 (not 50) keeps the prompt small
+        // enough to stay under Groq's per-minute token cap. Skip the AI
+        // relevance filter (aiFilter=false) — we only need raw headlines, and
+        // avoiding that extra Groq call keeps us clear of the rate limit.
+        const articles = await fetchCombinedNews(25, 'publishedAt', 2, false);
         const headlines = articles.map(a => a.title).join('\n');
         mcqState.currentMCQs = await generateMCQSet(headlines, mcqHistory.recent());
         mcqHistory.record(mcqState.currentMCQs);
@@ -219,8 +219,9 @@ function registerScheduler(bot) {
     bot.sendChatAction(chatId, 'typing').catch(() => {});
     let mcqs, source;
     try {
-      // Same fetch as the 10am cron (aiFilter off — just need headlines).
-      const articles = await fetchCombinedNews(50, 'publishedAt', 2, false);
+      // Same fetch as the 10am cron (aiFilter off, 25 headlines — just need
+      // topic material, kept small to stay under Groq's per-minute limit).
+      const articles = await fetchCombinedNews(25, 'publishedAt', 2, false);
       const headlines = articles.map(a => a.title).join('\n');
       mcqs = await generateMCQSet(headlines, mcqHistory.recent());
       source = '🤖 AI-generated from today’s headlines';
