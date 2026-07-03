@@ -83,7 +83,9 @@ function withTimeout(promise, ms = 12000) {
 
 // Asks Groq for a JSON response and parses it. A higher temperature yields
 // more varied wording/angles (used by the MCQ generator to avoid repeats).
-async function groqJSON(prompt, maxTokens = 1000, temperature = 1) {
+// timeoutMs can be raised for heavier generations (e.g. the 3-question quiz
+// with per-option explanations) so they don't time out and force a fallback.
+async function groqJSON(prompt, maxTokens = 1000, temperature = 1, timeoutMs = 20000) {
   const response = await withTimeout(axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
@@ -95,7 +97,7 @@ async function groqJSON(prompt, maxTokens = 1000, temperature = 1) {
       response_format: { type: 'json_object' }
     },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
-  ), 20000);
+  ), timeoutMs);
   return JSON.parse(response.data.choices[0].message.content);
 }
 
@@ -161,9 +163,11 @@ Respond ONLY with valid JSON in exactly this shape:
 Make every option plausible and tempting — NO joke, silly, or filler answers. Aim for genuinely challenging questions that test real understanding and application, not just definitions; the wrong options should be common misconceptions. Keep each option under 90 characters.`;
 
   // Higher temperature → more varied wording and angles day to day.
-  // Generous token headroom: three questions, each with a teaching
-  // explanation plus a mini-lesson for all three wrong options, needs room.
-  const data = await groqJSON(prompt, 4000, 1.1);
+  // Generous token headroom AND a longer timeout: three questions, each with
+  // a teaching explanation plus a mini-lesson for all three wrong options, is
+  // a big generation — too tight a budget/timeout truncates or times out and
+  // forces the hardcoded fallback (which is why some days lost the whyWrong).
+  const data = await groqJSON(prompt, 6000, 1.1, 45000);
   const qs = data && data.questions;
   const valid = Array.isArray(qs) && qs.length === 3 && qs.every(isValidMCQ);
   if (!valid) throw new Error('Malformed MCQ set from Groq');
