@@ -1,9 +1,8 @@
 const cron = require('node-cron');
-const { TZ, CHAT_ID, WEBAPP_URL, ADMIN_ID } = require('../config');
+const { TZ, CHAT_ID, ADMIN_ID } = require('../config');
 const { fetchCombinedNews } = require('./news');
 const { askGroq, generateMCQSet, generatePoll } = require('./groq');
 const { startReader } = require('./reader');
-const { sendTopStoriesTeaser } = require('./teaser');
 const { dailyPolls } = require('../data/polls');
 const { mcqQuestions, mcqState } = require('../data/mcq');
 const mcqHistory = require('./mcqHistory');
@@ -191,16 +190,13 @@ function registerScheduler(bot) {
     }
   }, cronOpts);
 
-  // 6:00pm SGT — Evening Top News teaser card
+  // 6:00pm SGT — Evening Top News (in-chat swipeable carousel).
+  // Uses the carousel (not the Mini App teaser) and the default popularity
+  // sort so it leads with the day's most significant stories.
   cron.schedule('0 18 * * *', async () => {
     try {
-      if (WEBAPP_URL) {
-        await sendTopStoriesTeaser(bot, CHAT_ID, { url: WEBAPP_URL, webApp: false, title: '🌆 Evening Top News' });
-      } else {
-        // No Mini App URL configured — fall back to the in-chat carousel.
-        await bot.sendMessage(CHAT_ID, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
-        await startReader(bot, CHAT_ID, { silent: true });
-      }
+      await bot.sendMessage(CHAT_ID, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
+      await startReader(bot, CHAT_ID, { silent: true });
     } catch (err) {
       console.error('Evening news error:', err.message);
     }
