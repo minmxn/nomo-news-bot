@@ -1,0 +1,7 @@
+.env
+node_modules
+reader-sessions.json
+chat-memory.json
+blocked-domains.json
+mcq-history.json
+.claude/

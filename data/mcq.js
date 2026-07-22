@@ -12,9 +12,12 @@ const mcqQuestions = [
 // Mutable state shared between commands and scheduler.
 // currentMCQs holds the three questions (Easy/Medium/Hard) posted at 10am
 // so the 11am job can reveal their answers.
+// pollMessageIds holds the Telegram message IDs of the three quiz polls so
+// the 11am job can stop them (which reveals the correct answer to all).
 const mcqState = {
   currentMCQIndex: 0,
-  currentMCQs: []
+  currentMCQs: [],
+  pollMessageIds: []
 };
 
 module.exports = { mcqQuestions, mcqState };
