@@ -28,8 +28,6 @@ if (WEBAPP_URL) {
     }
     sendTopStoriesTeaser(bot, msg.chat.id, { url: WEBAPP_URL, webApp: true });
   });
-} else {
-  console.warn('⚠️  WEBAPP_URL not set — Mini App launch button disabled (set it to your public Railway domain to enable /news).');
 }
 
 console.log('Nomo News Bot is running - BUILT BY MIN - all times SGT');
