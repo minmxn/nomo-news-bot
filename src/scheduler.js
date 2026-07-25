@@ -41,7 +41,6 @@ const scheduleText =
 📖  3:00pm — News Reader
 🌆  6:00pm — Evening Top News
 📖  8:00pm — News Reader
-📖 10:00pm — News Reader
 
 ━━━━━━━━━━━━━━━━━━━━━
 _BUILT BY MIN_ ⚡`;
@@ -157,8 +156,8 @@ function registerScheduler(bot) {
   //   9am poll:            1 (fetchCombinedNews — for AI poll context)
   //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
   //   6pm evening carousel: 1 (fetchCombinedNews via startReader)
-  //   4x reader updates:   1 each = 4 (fetchCombinedNews via startReader)
-  //   Total scheduled: ~8/day — leaves ~90 calls for user commands
+  //   3x reader updates:   1 each = 3 (fetchCombinedNews via startReader — 12pm, 3pm, 8pm)
+  //   Total scheduled: ~7/day — leaves ~90 calls for user commands
 
   // 8:00am SGT — Morning briefing (AI summary only)
   cron.schedule('0 8 * * *', async () => {
@@ -295,7 +294,6 @@ function registerScheduler(bot) {
   cron.schedule('0 12 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 12pm*').catch(e => console.error(e.message)), cronOpts);
   cron.schedule('0 15 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 3pm*').catch(e => console.error(e.message)), cronOpts);
   cron.schedule('0 20 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 8pm*').catch(e => console.error(e.message)), cronOpts);
-  cron.schedule('0 22 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 10pm*').catch(e => console.error(e.message)), cronOpts);
 }
 
 module.exports = { registerScheduler, mainKeyboard, scheduleText };

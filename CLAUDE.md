@@ -129,7 +129,6 @@ bot.js
 | 3:00pm | News reader (carousel) | scheduler.js → reader.js |
 | 6:00pm | Evening Top News (in-chat carousel, popularity sort) | scheduler.js → reader.js |
 | 8:00pm | News reader (carousel) | scheduler.js → reader.js |
-| 10:00pm | News reader (carousel) | scheduler.js → reader.js |
 
 ## Design notes / conventions
 
