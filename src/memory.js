@@ -4,7 +4,7 @@ const path = require('path');
 const MAX_MESSAGES = 20;             // 10 exchanges (user + assistant each)
 const IDLE_TTL = 60 * 60 * 1000;     // forget a thread after 60 min idle
 
-// Set MEMORY_STORE to a Railway volume path to survive redeploys.
+// Set MEMORY_STORE to a persistent volume path to survive redeploys.
 const STORE_PATH = process.env.MEMORY_STORE || path.join(__dirname, '..', 'chat-memory.json');
 
 // Per-user conversation threads, keyed by "<chatId>:<userId>" so each person

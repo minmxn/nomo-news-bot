@@ -60,13 +60,58 @@ function fallbackMCQSet() {
   return [pick('🟢 Easy'), pick('🟡 Medium'), pick('🔴 Hard')];
 }
 
-// ─── MCQ RENDERING (shared by the cron jobs and /testquiz) ────────
+// ─── MCQ HELPERS (shared by the cron jobs and /testquiz) ──────────
 
-// The questions body (levels, questions, options) — no header/footer.
-function renderMCQBody(mcqs) {
-  return mcqs.map((q, i) =>
-    `${q.level}\n*Q${i + 1}: ${q.question}*\n${q.options.join('\n')}`
-  ).join('\n\n');
+// Maps answer letter to 0-indexed option position for Telegram quiz polls.
+const ANSWER_INDEX = { A: 0, B: 1, C: 2, D: 3 };
+
+// Sends each MCQ as a native Telegram quiz poll. Returns an array of the
+// sent message objects (callers can pull .message_id to stopPoll later).
+async function sendMCQPolls(bot, chatId, mcqs) {
+  const msgs = [];
+  for (const q of mcqs) {
+    const msg = await bot.sendPoll(
+      chatId,
+      `${q.level}  ${q.question}`,
+      q.options,
+      {
+        type: 'quiz',
+        correct_option_id: ANSWER_INDEX[q.answer],
+        // Telegram caps poll explanations at 200 chars; full breakdown posts at 11am.
+        explanation: q.explanation.length <= 200 ? q.explanation : q.explanation.slice(0, 197) + '…',
+        is_anonymous: false,
+      }
+    );
+    msgs.push(msg);
+  }
+  return msgs;
+}
+
+// ─── GUILT TRIP (Duo-style) ────────────────────────────────────────
+
+const GUILT_LINES = [
+  "⏰ Quiz closed. Answers below. NOMO won't ask how it went.",
+  "📊 The quiz is done. The market doesn't care if you skipped it. Neither does NOMO. (We care a little.)",
+  "🧠 Answers incoming. For those who tried: respect. For everyone else: the market has no mercy either.",
+  "📉 Quiz over. Your portfolio and your quiz score have something in common today — we're not looking.",
+  "🤝 No judgement from NOMO. The quiz is closed, the answers are below, and we move on. Together. (Do better tomorrow.)",
+  "💼 The quiz wrapped up. Some of you were ready. Some of you were doing literally anything else. NOMO sees all.",
+  "📰 Breaking: local quiz goes unanswered. Markets unaffected. Your street cred: pending.",
+  "🎯 Quiz closed! The correct answers are below. Your job now is to pretend you knew them all along.",
+  "😌 It's fine. The quiz is over. NOMO is not mad. NOMO is just... disappointed. Answers below.",
+  "🏦 Fun fact: Warren Buffett would have done the quiz. Just putting that out there. Answers below.",
+  "📆 New day, same NOMO. Quiz is done — answers dropping now. No shame, only gains (of knowledge).",
+  "🤓 The quiz has closed. Somewhere, a finance bro is already screenshot-ing his score. Be better. Answers below.",
+  "🧾 Quiz receipts incoming. If you played — nice. If you didn't — NOMO is logging it as 'market research on human behaviour'.",
+  "💡 The answers are in. Think of this as a free masterclass you almost missed. Almost.",
+];
+
+
+function pickGuiltTrip() {
+  const today = new Date();
+  // Day-keyed rotation so it changes daily but stays consistent across restarts.
+  const idx = Math.floor(today.getTime() / 86400000) % GUILT_LINES.length;
+  return GUILT_LINES[idx];
 }
 
 // Posts the answers: correct answer, plain-language explanation, and a line
@@ -111,7 +156,7 @@ function registerScheduler(bot) {
   //   8am briefing:        1 (fetchCombinedNews)
   //   9am poll:            1 (fetchCombinedNews — for AI poll context)
   //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
-  //   6pm evening teaser:  1 (fetchCombinedNews via getStories)
+  //   6pm evening carousel: 1 (fetchCombinedNews via startReader)
   //   4x reader updates:   1 each = 4 (fetchCombinedNews via startReader)
   //   Total scheduled: ~8/day — leaves ~90 calls for user commands
 
@@ -173,17 +218,24 @@ function registerScheduler(bot) {
         mcqState.currentMCQs = fallbackMCQSet();
       }
 
-      const text = `🧠 *Daily Market Quiz!* — 3 Questions\n\n${renderMCQBody(mcqState.currentMCQs)}\n\n_Reply with your answers! Revealed at 11am_ ⏰`;
-      bot.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+      await bot.sendMessage(CHAT_ID, '🧠 *Daily Market Quiz!* — 3 questions, answers revealed at 11am ⏰\n\nTap your answer on each one 👇', { parse_mode: 'Markdown' });
+      const pollMsgs = await sendMCQPolls(bot, CHAT_ID, mcqState.currentMCQs);
+      mcqState.pollMessageIds = pollMsgs.map(m => m.message_id);
     } catch (err) {
       console.error('MCQ error:', err.message);
     }
   }, cronOpts);
 
-  // 11:00am SGT — MCQ answers
+  // 11:00am SGT — close polls, guilt trip, then full answer breakdown
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
+      // Stop each quiz poll — Telegram reveals the correct option to everyone.
+      for (const msgId of (mcqState.pollMessageIds || [])) {
+        await bot.stopPoll(CHAT_ID, msgId).catch(() => {});
+      }
+      // Duo-style guilt trip before the answers drop.
+      await bot.sendMessage(CHAT_ID, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
       await postMCQAnswers(bot, CHAT_ID, mcqState.currentMCQs);
     } catch (err) {
       console.error('MCQ answer error:', err.message);
@@ -191,7 +243,7 @@ function registerScheduler(bot) {
   }, cronOpts);
 
   // 6:00pm SGT — Evening Top News (in-chat swipeable carousel).
-  // Uses the carousel (not the Mini App teaser) and the default popularity
+  // Uses the in-chat carousel and the default popularity
   // sort so it leads with the day's most significant stories.
   cron.schedule('0 18 * * *', async () => {
     try {
@@ -227,7 +279,11 @@ function registerScheduler(bot) {
       source = `⚠️ AI generation failed (${e.response ? 'HTTP ' + e.response.status : e.message}) — showing hardcoded fallback`;
     }
     try {
-      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_\n\n${renderMCQBody(mcqs)}`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_\n\nTap your answer on each poll 👇`, { parse_mode: 'Markdown' });
+      const pollMsgs = await sendMCQPolls(bot, chatId, mcqs);
+      // Stop immediately so answers show right away in the test flow.
+      for (const m of pollMsgs) await bot.stopPoll(chatId, m.message_id).catch(() => {});
+      await bot.sendMessage(chatId, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
       await postMCQAnswers(bot, chatId, mcqs);
     } catch (err) {
       console.error('testquiz post error:', err.message);

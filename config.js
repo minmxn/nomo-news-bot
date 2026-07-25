@@ -6,7 +6,6 @@ const CHAT_ID = process.env.CHAT_ID;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const WEBAPP_URL = process.env.WEBAPP_URL;
 const ADMIN_ID = process.env.ADMIN_ID;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
@@ -35,8 +34,8 @@ if (missingRecommended.length) {
 if (missingRequired.length) {
   console.error('❌ Cannot start — missing required environment variables:');
   for (const k of missingRequired) console.error(`   - ${k}: ${REQUIRED[k]}`);
-  console.error('\nSet them in your .env file (local) or the service Variables (Railway), then restart.');
+  console.error('\nSet them in your .env file (local) or the host environment, then restart.');
   process.exit(1);
 }
 
-module.exports = { TZ, BOT_USERNAME, CHAT_ID, NEWS_API_KEY, GROQ_API_KEY, TELEGRAM_TOKEN, WEBAPP_URL, ADMIN_ID, TAVILY_API_KEY };
+module.exports = { TZ, BOT_USERNAME, CHAT_ID, NEWS_API_KEY, GROQ_API_KEY, TELEGRAM_TOKEN, ADMIN_ID, TAVILY_API_KEY };

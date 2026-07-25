@@ -92,7 +92,7 @@ async function fetchNewsByCountry(country, pageSize = 5) {
 // and returns the SAME most-popular articles every day (the feed never moves).
 // A sliding recent window keeps the content fresh day to day.
 // aiFilter: run the best-effort AI relevance pass (drops subtler fluff). Keep
-// it ON for user-facing feeds (reader carousel, Mini App, teaser). Turn it OFF
+// it ON for user-facing feeds (the reader carousel). Turn it OFF
 // for context-only fetches (briefing/poll/quiz) — they just need raw headlines
 // for topic ideas, and skipping it avoids a heavy Groq call right before those
 // features' own Groq call, which was tripping the rate limit → fallbacks.
