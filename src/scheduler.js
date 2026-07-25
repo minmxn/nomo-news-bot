@@ -156,7 +156,7 @@ function registerScheduler(bot) {
   //   8am briefing:        1 (fetchCombinedNews)
   //   9am poll:            1 (fetchCombinedNews — for AI poll context)
   //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
-  //   6pm evening teaser:  1 (fetchCombinedNews via getStories)
+  //   6pm evening carousel: 1 (fetchCombinedNews via startReader)
   //   4x reader updates:   1 each = 4 (fetchCombinedNews via startReader)
   //   Total scheduled: ~8/day — leaves ~90 calls for user commands
 
@@ -243,7 +243,7 @@ function registerScheduler(bot) {
   }, cronOpts);
 
   // 6:00pm SGT — Evening Top News (in-chat swipeable carousel).
-  // Uses the carousel (not the Mini App teaser) and the default popularity
+  // Uses the in-chat carousel and the default popularity
   // sort so it leads with the day's most significant stories.
   cron.schedule('0 18 * * *', async () => {
     try {

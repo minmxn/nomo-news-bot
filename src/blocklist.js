@@ -14,7 +14,7 @@ const DEFAULTS = [
   'uncrate.com',                                 // shopping / lifestyle catalog
 ];
 
-// Set BLOCKLIST_STORE to a Railway volume path to survive redeploys.
+// Set BLOCKLIST_STORE to a persistent volume path to survive redeploys.
 const STORE_PATH = process.env.BLOCKLIST_STORE || path.join(__dirname, '..', 'blocked-domains.json');
 
 let domains = new Set(DEFAULTS);

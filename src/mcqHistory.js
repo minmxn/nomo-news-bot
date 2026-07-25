@@ -8,7 +8,7 @@ const path = require('path');
 // Keep this many recent questions (≈ the last ~10 days × 3 questions).
 const MAX = 30;
 
-// Set MCQ_HISTORY_STORE to a Railway volume path to survive redeploys.
+// Set MCQ_HISTORY_STORE to a persistent volume path to survive redeploys.
 const STORE_PATH = process.env.MCQ_HISTORY_STORE || path.join(__dirname, '..', 'mcq-history.json');
 
 let questions = []; // most-recent-last

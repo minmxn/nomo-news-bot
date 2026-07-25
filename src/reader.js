@@ -10,7 +10,7 @@ const PLACEHOLDER = 'https://placehold.co/1024x576/1a1a2e/FFD700.png?text=NOMO+N
 const STORY_COUNT = 10;
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-// Where sessions are persisted. Set READER_STORE to a Railway volume path
+// Where sessions are persisted. Set READER_STORE to a persistent volume path
 // (e.g. /data/reader-sessions.json) so sessions also survive redeploys.
 const STORE_PATH = process.env.READER_STORE || path.join(__dirname, '..', 'reader-sessions.json');
 
