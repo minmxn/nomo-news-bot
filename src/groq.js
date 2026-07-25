@@ -40,11 +40,11 @@ async function askGroq(question, newsContext = '') {
 ${newsContext ? `\nLatest news context:\n${newsContext}\n` : ''}
 Question: ${question}`;
 
-  const response = await axios.post(
+  const response = await withRetry(() => axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     { model: MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 1000, reasoning_effort: REASONING_EFFORT },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
-  );
+  ));
   return response.data.choices[0].message.content;
 }
 
@@ -63,12 +63,12 @@ async function chatGroq(history, question, webContext = '') {
     ...recentHistory,
     { role: 'user', content: userContent }
   ];
-  const response = await axios.post(
+  const response = await withRetry(() => axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     // Headroom for a slightly longer answer; brevity is enforced by the persona.
     { model: MODEL, messages, max_tokens: 800, reasoning_effort: REASONING_EFFORT },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
-  );
+  ));
   return response.data.choices[0].message.content;
 }
 
@@ -81,12 +81,40 @@ function withTimeout(promise, ms = 12000) {
   ]);
 }
 
+// Retries a Groq call when the API rate-limits us (HTTP 429). Groq sends a
+// `Retry-After` header (seconds) saying when we're allowed again; we wait that
+// long (capped by maxWaitMs so a cron never hangs) and try again, up to
+// `attempts` times. ONLY 429s are retried — every other error (timeout, bad
+// JSON, malformed shape) fails fast, exactly as before, so the caller falls
+// back immediately. This smooths over the brief bursts — e.g. the reader
+// firing filterRelevantNews + generateSummaries back-to-back — that were
+// tripping the per-minute limit and forcing fallbacks.
+async function withRetry(fn, attempts = 3, maxWaitMs = 15000) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const is429 = e.response && e.response.status === 429;
+      if (!is429 || i >= attempts - 1) throw e;
+      const headerSec = Number(e.response.headers && e.response.headers['retry-after']);
+      const waitMs = Math.min(
+        Number.isFinite(headerSec) && headerSec > 0 ? headerSec * 1000 : 1000 * 2 ** i,
+        maxWaitMs
+      );
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+}
+
 // Asks Groq for a JSON response and parses it. A higher temperature yields
 // more varied wording/angles (used by the MCQ generator to avoid repeats).
 // timeoutMs can be raised for heavier generations (e.g. the 3-question quiz
 // with per-option explanations) so they don't time out and force a fallback.
 async function groqJSON(prompt, maxTokens = 1000, temperature = 1, timeoutMs = 20000) {
-  const response = await withTimeout(axios.post(
+  // withRetry wraps withTimeout: each attempt gets its own timeout, and a 429
+  // between attempts is backed off per the Retry-After header. Non-429 errors
+  // (including a timeout) throw straight through to the caller's fallback.
+  const response = await withRetry(() => withTimeout(axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
       model: MODEL,
@@ -97,7 +125,7 @@ async function groqJSON(prompt, maxTokens = 1000, temperature = 1, timeoutMs = 2
       response_format: { type: 'json_object' }
     },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
-  ), timeoutMs);
+  ), timeoutMs));
   return JSON.parse(response.data.choices[0].message.content);
 }
 
