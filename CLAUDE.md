@@ -15,7 +15,7 @@ A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, sum
 - **NewsAPI** (newsapi.org) — news source (free tier: 100 calls/day, ~24h article delay)
 - **Groq** (runs `openai/gpt-oss-120b`) — AI summaries, briefings, polls, quizzes, and the free-text Q&A
 - **Tavily** (tavily.com) — web search that grounds the free-text Q&A in live info
-- Deployed on **Oracle Cloud** (Always Free tier). A `Dockerfile` is included for container-based hosting; the bot is a long-polling Telegram client and needs no inbound ports.
+- Runs under **PM2** on an **Oracle Cloud (OCI) Always Free** ARM instance — see [Deployment & operations](#deployment--operations). The bot is a long-polling Telegram client and needs no inbound ports. (A `Dockerfile` / `.dockerignore` remain in the repo from an abandoned Fly.io attempt but are **unused** by the current PM2 deployment — safe to delete.)
 
 ## Commands
 
@@ -27,6 +27,28 @@ npm start        # run the bot (= node bot.js)
 There is no test suite and no linter configured.
 
 Only one instance may poll Telegram at a time, or you get HTTP 409 conflicts. Since the deployed bot polls continuously, don't also run it locally against the same token. Use a separate `TELEGRAM_TOKEN` pointing to a test bot for local development.
+
+## Deployment & operations
+
+The bot runs on an **Oracle Cloud (OCI) Always Free** instance. It migrated off **Railway** (subscription ended) in **July 2026**. Deployment is plain Node + PM2 — **not** Docker/containers, despite the leftover `Dockerfile`.
+
+**Where it runs**
+- OCI instance `nomo-news-bot`, region `ap-singapore-1`, shape `VM.Standard.A1.Flex` (ARM / `aarch64`, 4 OCPU / 24 GB — the Always Free max), Ubuntu 24.04.
+- Code lives at `/home/ubuntu/nomo-news-bot`, cloned from GitHub **`main`**. Secrets are in `/home/ubuntu/nomo-news-bot/.env` — **git-ignored, so the real keys live only on the server** (`git pull` never touches `.env`).
+- Runs under **PM2** as process **`nomo-bot`**; auto-starts on reboot via the systemd unit `pm2-ubuntu` (`pm2 startup` + `pm2 save` already configured).
+
+**SSH access**
+- Connect with the shortcut **`ssh nomo`** (alias in the operator's `~/.ssh/config` → HostName = the instance's public IP, User `ubuntu`). The private key is held in the **Windows ssh-agent** (no loose key file on disk).
+- ⚠️ **Corporate wifi (Accenture) blocks outbound SSH (port 22).** You must be on a **personal network / phone hotspot** to SSH in. The bot itself is unaffected — it reaches Telegram/Groq/Tavily *outbound from the server*, independent of the operator's laptop network.
+
+**Deploying changes** (the server tracks `main`)
+1. Commit and push to **`main`**: `git add -A && git commit -m "..." && git push`.
+2. Deploy: run **`deploy`** (a PowerShell function in the operator's profile) — or the explicit `ssh nomo "bash ~/deploy.sh"`. Both run the same 4 steps on the server:
+   `cd ~/nomo-news-bot && git pull && npm install && pm2 restart nomo-bot`. Both need hotspot.
+
+**Monitoring**
+- `ssh nomo "pm2 list"` — status (healthy = `online`).
+- `ssh nomo "pm2 logs nomo-bot --lines 20 --nostream"` — recent logs. Note PM2's `error.log` also collects harmless Node **warnings** (deprecation notices, best-effort Groq fallbacks like "Reader summary generation failed, using descriptions"), not just real errors — a `429` from Groq is a free-tier rate limit, not a bug.
 
 ## Environment variables
 
@@ -82,6 +104,8 @@ bot.js
     └── mcq.js             mcqQuestions (hardcoded fallback) + mcqState
 ```
 
+> The Mini App (a swipeable web reader served by an Express server) was **removed** in July 2026 — `src/webserver.js`, `src/teaser.js`, and `public/` are gone, along with the `express` dependency and the `WEBAPP_URL`/`PORT` env vars. The bot is now purely an in-chat experience.
+
 ### Data flow (scheduled post)
 
 `cron fires → news.js fetchCombinedNews() (1 NewsAPI call, blocked domains filtered)
@@ -109,8 +133,8 @@ bot.js
 
 ## Design notes / conventions
 
-- **AI is best-effort.** Every Groq-backed feature (summaries, poll, MCQ) has a silent fallback (description / hardcoded poll / hardcoded MCQ) and logs failures via `console.error`. Users always get content.
-- **Groq model.** `MODEL = 'openai/gpt-oss-120b'` (in `groq.js`) is a reasoning model; `REASONING_EFFORT = 'low'` keeps latency and token usage down. This replaced the deprecated `llama-3.3-70b-versatile` (deprecated 2026-08-16). Change the one constant to swap models everywhere.
+- **AI is best-effort.** Every Groq-backed feature (summaries, poll, MCQ) has a silent fallback (description / hardcoded poll / hardcoded MCQ) and logs failures via `console.error`. Users always get content — so log lines like "summary generation failed, using descriptions" are *graceful fallbacks*, not outages.
+- **Groq model.** `MODEL = 'openai/gpt-oss-120b'` (in `groq.js`) is a reasoning model; `REASONING_EFFORT = 'low'` keeps latency and token usage down. This replaced the deprecated `llama-3.3-70b-versatile` (deprecated 2026-08-16). Change the one constant to swap models everywhere. Groq's **free tier rate-limits** (HTTP 429) under bursts — expected during heavy manual testing, clears on its own under normal spaced-out use.
 - **API budget.** Scheduled posts use ~8 NewsAPI calls/day (1 each) to stay well under the 100/day free-tier cap. The combined query (`fetchCombinedNews`) replaced 3 separate category fetches. Quota is tracked in `quota.js` (in-memory, resets at SGT midnight).
 - **Feed quality.** `news.js` drops (1) blocked domains via `blocklist.js` (defaults include aggregators + non-news like pypi.org, github.com, fiction/blog/sports sites; more added at runtime with `/block`), (2) shopping/affiliate "deals" articles, and (3) obvious lifestyle fluff — all by keyword. `fetchCombinedNews` then runs a best-effort AI relevance pass (`filterRelevantNews` in `groq.js`) to drop subtler off-topic fluff from legit outlets. Queries use quoted phrases so partial words don't false-match. There is no source whitelist — the feed pulls from all of NewsAPI minus these filters.
 - **Times are always Asia/Singapore** via the `TZ` constant and `cron` `{ timezone: TZ }`.
@@ -120,3 +144,4 @@ bot.js
 - NewsAPI free tier delays articles up to ~24h and caps at 100 calls/day.
 - Reader sessions persist to a file; this only survives redeploys if `READER_STORE` points at a mounted/persistent volume.
 - Single polling instance only (no horizontal scaling). The long-polling Telegram connection needs the host running continuously; ensure exactly one instance is up at a time (a second instance causes HTTP 409 conflicts).
+- The OCI instance's **public IP is ephemeral** — it can change if the instance is stopped/started. If it changes, update `HostName` in the operator's `~/.ssh/config` (`ssh nomo`). The bot's outbound functionality is unaffected by IP changes; only SSH access is.
