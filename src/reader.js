@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { fetchCombinedNews } = require('./news');
-const { generateSummaries } = require('./groq');
+const { generateSummaries, groqErr } = require('./groq');
 const { truncate, cleanSourceName } = require('./helpers');
 
 // Fallback image Telegram can fetch when an article has no usable photo.
@@ -142,7 +142,7 @@ async function startReader(bot, chatId, opts = {}) {
     // Pre-fetch summaries and all images up front so navigation is fast.
     const [summaries, buffers] = await Promise.all([
       generateSummaries(articles).catch(err => {
-        console.error('Reader summary generation failed, using descriptions:', err.message);
+        console.error('Reader summary generation failed, using descriptions:', groqErr(err));
         return [];
       }),
       Promise.all(articles.map(a => fetchBuffer(a.urlToImage)))

@@ -106,6 +106,21 @@ async function withRetry(fn, attempts = 3, maxWaitMs = 15000) {
   }
 }
 
+// Produces a readable one-line reason a Groq call failed, for logs. An axios
+// error otherwise surfaces with a vague or empty `.message`; this pulls out the
+// HTTP status and a short snippet of Groq's response body so the logs say WHY
+// (a 429 rate-limit body, a validation error, etc.) instead of a blank string.
+function groqErr(e) {
+  if (!e) return 'unknown error';
+  if (e.response) {
+    let body = '';
+    try { body = JSON.stringify(e.response.data).slice(0, 200); }
+    catch (_) { body = String(e.response.data).slice(0, 200); }
+    return `HTTP ${e.response.status} ${body}`;
+  }
+  return e.message || e.name || String(e);
+}
+
 // Asks Groq for a JSON response and parses it. A higher temperature yields
 // more varied wording/angles (used by the MCQ generator to avoid repeats).
 // timeoutMs can be raised for heavier generations (e.g. the 3-question quiz
@@ -126,7 +141,18 @@ async function groqJSON(prompt, maxTokens = 1000, temperature = 1, timeoutMs = 2
     },
     { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
   ), timeoutMs));
-  return JSON.parse(response.data.choices[0].message.content);
+  // Pull the content defensively — a rate-limited or degraded response can omit
+  // choices/content, which otherwise threw a cryptic "cannot read ... of
+  // undefined" (or an empty message). Give the parse failure an informative
+  // message with a snippet of what Groq actually sent, so the caller's log
+  // says WHY it failed instead of logging a blank string.
+  const content = response?.data?.choices?.[0]?.message?.content;
+  try {
+    return JSON.parse(content);
+  } catch (_) {
+    const snippet = typeof content === 'string' ? content.slice(0, 200) : String(content);
+    throw new Error(`Groq returned non-JSON: ${JSON.stringify(snippet)}`);
+  }
 }
 
 // Validates one MCQ object has the expected shape.
@@ -270,10 +296,23 @@ Provide exactly ${articles.length} summaries.`;
 
   const data = await groqJSON(prompt, 2200);
   const s = data && data.summaries;
-  const valid = Array.isArray(s) && s.length === articles.length &&
-    s.every(x => typeof x === 'string' && x.trim().length > 0);
-  if (!valid) throw new Error('Malformed summaries from Groq');
-  return s.map(x => x.trim());
+  if (!Array.isArray(s) || s.length === 0) {
+    throw new Error(`Malformed summaries from Groq (expected an array of ${articles.length}, got ${JSON.stringify(s)?.slice(0, 120)})`);
+  }
+  // Best-effort: coerce to exactly articles.length by index. A valid string is
+  // kept; any missing, blank, or non-string slot becomes '' so buildCaption
+  // falls back to THAT article's own description for just that one card —
+  // instead of discarding every good summary because Groq miscounted by one.
+  const out = articles.map((_, i) => {
+    const x = s[i];
+    return typeof x === 'string' && x.trim() ? x.trim() : '';
+  });
+  // Only give up (and let the caller fall back wholesale) if nothing usable
+  // came back at all.
+  if (!out.some(Boolean)) {
+    throw new Error(`Malformed summaries from Groq (0 usable of ${articles.length})`);
+  }
+  return out;
 }
 
 // Best-effort relevance filter. Given articles, asks Groq which headlines are
@@ -302,9 +341,9 @@ Respond ONLY with JSON containing a "news" array of EXACTLY ${articles.length} b
     const filtered = articles.filter((_, i) => verdicts[i] !== false);
     return filtered.length ? filtered : articles;
   } catch (e) {
-    console.error('filterRelevantNews failed:', e.message);
+    console.error('filterRelevantNews failed:', groqErr(e));
     return articles;
   }
 }
 
-module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries, filterRelevantNews };
+module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries, filterRelevantNews, groqErr };
