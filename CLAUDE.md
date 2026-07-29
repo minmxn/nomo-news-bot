@@ -30,6 +30,8 @@ Only one instance may poll Telegram at a time, or you get HTTP 409 conflicts. Si
 
 ## Deployment & operations
 
+> The human-readable backstory and operational gotchas live in [docs/HANDOFF.md](docs/HANDOFF.md) — a plain-English narrative that complements this section's reference-style summary.
+
 The bot runs on an **Oracle Cloud (OCI) Always Free** instance. It migrated off **Railway** (subscription ended) in **July 2026**. Deployment is plain Node + PM2 — **not** Docker/containers, despite the leftover `Dockerfile`.
 
 **Where it runs**
@@ -99,9 +101,13 @@ bot.js
 │   ├── mcqHistory.js      rolling 30-question avoid-list fed to generateMCQSet()
 │   │                      so Groq doesn't repeat topics; persisted to MCQ_HISTORY_STORE
 │   └── quota.js           in-memory daily NewsAPI call counter (resets SGT midnight)
-└── data/
-    ├── polls.js           dailyPolls (per weekday)
-    └── mcq.js             mcqQuestions (hardcoded fallback) + mcqState
+├── data/
+│   ├── polls.js           dailyPolls (per weekday)
+│   └── mcq.js             mcqQuestions (hardcoded fallback) + mcqState
+└── docs/
+    └── HANDOFF.md         plain-English migration + operations narrative
+                           (Railway→OCI, networking, SSH gotcha, key-rotation
+                           history) — read for the "why" behind Deployment & operations
 ```
 
 > The Mini App (a swipeable web reader served by an Express server) was **removed** in July 2026 — `src/webserver.js`, `src/teaser.js`, and `public/` are gone, along with the `express` dependency and the `WEBAPP_URL`/`PORT` env vars. The bot is now purely an in-chat experience.

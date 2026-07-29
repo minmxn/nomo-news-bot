@@ -61,29 +61,13 @@ function fallbackMCQSet() {
 
 // ─── MCQ HELPERS (shared by the cron jobs and /testquiz) ──────────
 
-// Maps answer letter to 0-indexed option position for Telegram quiz polls.
-const ANSWER_INDEX = { A: 0, B: 1, C: 2, D: 3 };
-
-// Sends each MCQ as a native Telegram quiz poll. Returns an array of the
-// sent message objects (callers can pull .message_id to stopPoll later).
-async function sendMCQPolls(bot, chatId, mcqs) {
-  const msgs = [];
-  for (const q of mcqs) {
-    const msg = await bot.sendPoll(
-      chatId,
-      `${q.level}  ${q.question}`,
-      q.options,
-      {
-        type: 'quiz',
-        correct_option_id: ANSWER_INDEX[q.answer],
-        // Telegram caps poll explanations at 200 chars; full breakdown posts at 11am.
-        explanation: q.explanation.length <= 200 ? q.explanation : q.explanation.slice(0, 197) + '…',
-        is_anonymous: false,
-      }
-    );
-    msgs.push(msg);
-  }
-  return msgs;
+// Sends all 3 MCQs as a single text message.
+async function sendMCQText(bot, chatId, mcqs) {
+  const body = mcqs.map((q, i) =>
+    `${q.level}\n*Q${i + 1}: ${q.question}*\n${q.options.join('\n')}`
+  ).join('\n\n');
+  const text = `🧠 *Daily Market Quiz!* — 3 Questions\n\n${body}\n\n_Reply with your answers! Revealed at 11am_ ⏰`;
+  await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
 }
 
 // ─── GUILT TRIP (Duo-style) ────────────────────────────────────────
@@ -217,22 +201,16 @@ function registerScheduler(bot) {
         mcqState.currentMCQs = fallbackMCQSet();
       }
 
-      await bot.sendMessage(CHAT_ID, '🧠 *Daily Market Quiz!* — 3 questions, answers revealed at 11am ⏰\n\nTap your answer on each one 👇', { parse_mode: 'Markdown' });
-      const pollMsgs = await sendMCQPolls(bot, CHAT_ID, mcqState.currentMCQs);
-      mcqState.pollMessageIds = pollMsgs.map(m => m.message_id);
+      await sendMCQText(bot, CHAT_ID, mcqState.currentMCQs);
     } catch (err) {
       console.error('MCQ error:', err.message);
     }
   }, cronOpts);
 
-  // 11:00am SGT — close polls, guilt trip, then full answer breakdown
+  // 11:00am SGT — guilt trip, then full answer breakdown
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
-      // Stop each quiz poll — Telegram reveals the correct option to everyone.
-      for (const msgId of (mcqState.pollMessageIds || [])) {
-        await bot.stopPoll(CHAT_ID, msgId).catch(() => {});
-      }
       // Duo-style guilt trip before the answers drop.
       await bot.sendMessage(CHAT_ID, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
       await postMCQAnswers(bot, CHAT_ID, mcqState.currentMCQs);
@@ -278,10 +256,8 @@ function registerScheduler(bot) {
       source = `⚠️ AI generation failed (${e.response ? 'HTTP ' + e.response.status : e.message}) — showing hardcoded fallback`;
     }
     try {
-      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_\n\nTap your answer on each poll 👇`, { parse_mode: 'Markdown' });
-      const pollMsgs = await sendMCQPolls(bot, chatId, mcqs);
-      // Stop immediately so answers show right away in the test flow.
-      for (const m of pollMsgs) await bot.stopPoll(chatId, m.message_id).catch(() => {});
+      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_`, { parse_mode: 'Markdown' });
+      await sendMCQText(bot, chatId, mcqs);
       await bot.sendMessage(chatId, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
       await postMCQAnswers(bot, chatId, mcqs);
     } catch (err) {
