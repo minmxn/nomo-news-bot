@@ -257,7 +257,7 @@ function registerScheduler(bot) {
     try {
       await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_`, { parse_mode: 'Markdown' });
       await sendMCQText(bot, chatId, mcqs);
-      await bot.sendMessage(chatId, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
+      await bot.sendMessage(chatId, pickGuiltTrip());
       await postMCQAnswers(bot, chatId, mcqs);
     } catch (err) {
       console.error('testquiz post error:', err.message);
