@@ -202,9 +202,11 @@ function registerScheduler(bot) {
   cron.schedule('0 11 * * *', async () => {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
-      // Duo-style guilt trip before the answers drop.
+      // Duo-style guilt trip before the answers drop. Sent as plain text — the
+      // lines have no formatting, and MarkdownV2 would reject their unescaped
+      // '.', '(', ')', '-', '!' characters (400 "can't parse entities").
       await broadcast(async (chatId) => {
-        await bot.sendMessage(chatId, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
+        await bot.sendMessage(chatId, pickGuiltTrip());
         await postMCQAnswers(bot, chatId, mcqState.currentMCQs);
       });
     } catch (err) {
