@@ -12,7 +12,8 @@ A Telegram news bot ("BUILT BY MIN") that fetches financial/world/tech news, sum
 - **node-telegram-bot-api** — Telegram bot (long polling)
 - **axios** — HTTP (NewsAPI, Groq, image downloads)
 - **node-cron** — scheduled posts (all times Asia/Singapore)
-- **NewsAPI** (newsapi.org) — news source (free tier: 100 calls/day, ~24h article delay)
+- **GNews** (gnews.io) — **primary** news source, real-time (free tier: 100 calls/day, max 10 articles/request)
+- **NewsAPI** (newsapi.org) — **fallback** news source, used when GNews is unset or errors (free tier: 100 calls/day, ~24h article delay)
 - **Groq** (runs `openai/gpt-oss-120b`) — AI summaries, briefings, polls, quizzes, and the free-text Q&A
 - **Tavily** (tavily.com) — web search that grounds the free-text Q&A in live info
 - Runs under **PM2** on an **Oracle Cloud (OCI) Always Free** ARM instance — see [Deployment & operations](#deployment--operations). The bot is a long-polling Telegram client and needs no inbound ports. (A `Dockerfile` / `.dockerignore` remain in the repo from an abandoned Fly.io attempt but are **unused** by the current PM2 deployment — safe to delete.)
@@ -59,7 +60,8 @@ Validated at startup in [config.js](config.js) — the process exits with a clea
 | Var | Required | Purpose |
 |---|---|---|
 | `TELEGRAM_TOKEN` | ✅ | Bot token from @BotFather |
-| `NEWS_API_KEY` | ✅ | newsapi.org key |
+| `NEWS_API_KEY` | ✅ | newsapi.org key (fallback news source) |
+| `GNEWS_API_KEY` | recommended | gnews.io key — the **primary**, real-time news source. Without it (or if a GNews call errors, e.g. daily-cap 403) the fetchers in [news.js](src/news.js) fall back to NewsAPI, which is ~24h delayed. Free tier: 100 calls/day, max 10 articles/request |
 | `GROQ_API_KEY` | recommended | AI features; degrade gracefully if absent |
 | `TAVILY_API_KEY` | recommended | Tavily (tavily.com) web-search key. Powers the live-web grounding for the free-text Q&A so it answers current questions from real sources instead of stale model memory. Without it the Q&A still works but only from the model's training (and says "can't confirm" on recent topics). Free tier ~1,000 searches/mo |
 | `CHAT_ID` | recommended | Target chat(s)/channel(s) for scheduled posts. Accepts a **comma-separated list** to broadcast every scheduled post to multiple chats (e.g. a private group + a public channel): `CHAT_ID=-100123...,@NomoNewsClub`. A public chat can be referenced by its `@username`; private ones need the numeric `-100…` id. Config parses this into `CHAT_IDS` (trimmed, de-duplicated); a single id still works unchanged. The bot must be an admin with post rights in each target |
@@ -84,7 +86,8 @@ bot.js
 │   │                      keyboard, the /schedule text, MCQ fallback picker
 │   ├── reader.js          registerReader(bot) + startReader() — the /read
 │   │                      swipeable carousel (inline-button navigation)
-│   ├── news.js            NewsAPI fetchers + blocked-domain filtering
+│   ├── news.js            GNews (primary) + NewsAPI (fallback) fetchers +
+│   │                      blocked-domain filtering
 │   ├── search.js          webSearchContext() — Tavily web search returning a
 │   │                      short, token-capped snippet block to ground the Q&A
 │   ├── groq.js            askGroq + chatGroq (free-text Q&A, takes web context)
@@ -114,7 +117,7 @@ bot.js
 
 ### Data flow (scheduled post)
 
-`cron fires → news.js fetchCombinedNews() (1 NewsAPI call, blocked domains filtered)
+`cron fires → news.js fetchCombinedNews() (1 GNews call, or NewsAPI on fallback; blocked domains filtered)
 → groq.js summarizes/builds content → bot broadcasts to every chat in CHAT_IDS`.
 
 News is fetched **once per slot** and the same articles are shared across all target chats, so adding chats doesn't multiply NewsAPI/Groq usage. Each chat's send is isolated (via the `broadcast()` helper in [scheduler.js](src/scheduler.js)) — a failure to one target is logged and skipped, the rest still post.
@@ -148,7 +151,7 @@ News is fetched **once per slot** and the same articles are shared across all ta
 
 ## Known limitations
 
-- NewsAPI free tier delays articles up to ~24h and caps at 100 calls/day.
+- GNews (primary) is real-time but its free tier caps at 100 calls/day and 10 articles/request. When it's unavailable the bot falls back to NewsAPI, whose free tier delays articles up to ~24h and also caps at 100 calls/day.
 - Reader sessions persist to a file; this only survives redeploys if `READER_STORE` points at a mounted/persistent volume.
 - Single polling instance only (no horizontal scaling). The long-polling Telegram connection needs the host running continuously; ensure exactly one instance is up at a time (a second instance causes HTTP 409 conflicts).
 - The OCI instance's **public IP is ephemeral** — it can change if the instance is stopped/started. If it changes, update `HostName` in the operator's `~/.ssh/config` (`ssh nomo`). The bot's outbound functionality is unaffected by IP changes; only SSH access is.
