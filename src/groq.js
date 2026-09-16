@@ -48,6 +48,31 @@ Question: ${question}`;
   return response.data.choices[0].message.content;
 }
 
+// Turns a list of headlines into a short, friendly morning briefing. This has
+// its OWN prompt rather than reusing askGroq/PERSONA on purpose: PERSONA is the
+// live-web Q&A persona and is told to REFUSE ("I don't have up-to-date live
+// info") whenever it lacks a "LIVE WEB RESULTS" block — which made the briefing
+// apologise instead of summarising. Here the headlines ARE the source, so we
+// tell the model to summarise exactly what it's given and nothing else.
+async function generateBriefing(headlines) {
+  const prompt = `You are NOMO, a friendly financial and world-news analyst built by MIN. Write a short, warm morning briefing that summarises TODAY'S headlines below for a general reader.
+
+Rules:
+- Base the briefing ONLY on the headlines provided. Do not add facts, numbers, or events that aren't in them, and do not say you lack live information — these headlines ARE today's news.
+- Keep it tight: a short intro line, then 3-5 quick highlights (use "• " bullets). Plain, clear language, no jargon.
+- This is a Telegram message: use ONLY short paragraphs and "• " bullets. No Markdown tables, pipes (|), headings (#), HTML, or <br>. Use *bold* (single asterisks) sparingly at most.
+
+Today's headlines:
+${headlines}`;
+
+  const response = await withRetry(() => axios.post(
+    'https://api.groq.com/openai/v1/chat/completions',
+    { model: MODEL, messages: [{ role: 'user', content: prompt }], max_tokens: 1000, reasoning_effort: REASONING_EFFORT },
+    { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
+  ));
+  return response.data.choices[0].message.content;
+}
+
 // Multi-turn chat completion for the free-text Q&A. `webContext` is a short
 // Tavily snippet block (see search.js) injected so the model answers from
 // live info instead of stale training memory. We do the search ourselves and
@@ -346,4 +371,4 @@ Respond ONLY with JSON containing a "news" array of EXACTLY ${articles.length} b
   }
 }
 
-module.exports = { askGroq, chatGroq, generateMCQSet, generatePoll, generateSummaries, filterRelevantNews, groqErr };
+module.exports = { askGroq, chatGroq, generateBriefing, generateMCQSet, generatePoll, generateSummaries, filterRelevantNews, groqErr };

@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { TZ, CHAT_IDS, ADMIN_ID } = require('../config');
 const { fetchCombinedNews } = require('./news');
-const { askGroq, generateMCQSet } = require('./groq');
+const { generateBriefing, generateMCQSet } = require('./groq');
 const { startReader } = require('./reader');
 const { mcqQuestions, mcqState } = require('../data/mcq');
 const mcqHistory = require('./mcqHistory');
@@ -164,7 +164,14 @@ function registerScheduler(bot) {
     try {
       const allArticles = await fetchCombinedNews(15, 'popularity', 2, false);
       const allNews = allArticles.map(a => a.title).join('\n');
-      const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
+      // No headlines to summarise (empty feed / quota / all filtered) — skip the
+      // post rather than ask the model with no input, which produced the
+      // "I don't have live info" apology.
+      if (!allNews.trim()) {
+        console.error('Morning briefing skipped: no news available');
+        return;
+      }
+      const summary = await generateBriefing(allNews);
       await broadcast((chatId) => bot.sendMessage(chatId, `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' }));
     } catch (err) {
       console.error('Morning briefing error:', err.message);

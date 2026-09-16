@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { NEWS_API_KEY } = require('../config');
+const { NEWS_API_KEY, GNEWS_API_KEY } = require('../config');
 const { trackApiCall } = require('./quota');
 const { isBlocked } = require('./blocklist');
 const { filterRelevantNews } = require('./groq');
@@ -51,6 +51,59 @@ function filterArticles(articles) {
     a && a.url && !isBlocked(a.url) && !isCommercialDeal(a) && !isFluff(a));
 }
 
+// --- GNews (primary, real-time source) -------------------------------------
+// GNews replaced NewsAPI as the primary source because its free tier returns
+// real-time news, where NewsAPI's free tier delays articles ~24h. NewsAPI
+// stays wired up as a fallback (see the fetchers below): if GNEWS_API_KEY is
+// unset, or a GNews call errors (network / daily-cap 403 / etc.), the fetcher
+// silently falls back to NewsAPI so users always get content.
+//
+// GNews free-tier limits worth knowing: max 10 articles per request and 100
+// requests/day. So the over-fetch buffers used for NewsAPI don't apply here —
+// GNews just returns up to 10, which we then filter and trim.
+
+// GNews articles use a different shape than NewsAPI. Map to the NewsAPI shape
+// the rest of the bot (reader, helpers, filters) already expects.
+function normalizeGNews(a) {
+  return {
+    title: a.title,
+    description: a.description,
+    content: a.content,
+    url: a.url,
+    urlToImage: a.image,            // GNews calls it `image`
+    publishedAt: a.publishedAt,
+    source: { name: a.source && a.source.name },
+  };
+}
+
+async function gnewsSearch(q, { sortby = 'publishedAt', from, country } = {}) {
+  const params = { q, lang: 'en', max: 10, sortby, apikey: GNEWS_API_KEY };
+  if (from) params.from = from;         // ISO datetime, e.g. 2026-09-15T00:00:00Z
+  if (country) params.country = country;
+  const res = await axios.get('https://gnews.io/api/v4/search', { params });
+  return (res.data.articles || []).map(normalizeGNews);
+}
+
+async function gnewsHeadlines({ category = 'general', country } = {}) {
+  const params = { lang: 'en', max: 10, category, apikey: GNEWS_API_KEY };
+  if (country) params.country = country;
+  const res = await axios.get('https://gnews.io/api/v4/top-headlines', { params });
+  return (res.data.articles || []).map(normalizeGNews);
+}
+
+// Try GNews first (real-time); on missing key or any error, return null so the
+// caller falls back to NewsAPI. Never throws.
+async function tryGnews(fn, label) {
+  if (!GNEWS_API_KEY) return null;
+  try {
+    return await fn();
+  } catch (e) {
+    const status = e.response && e.response.status;
+    console.error(`GNews ${label} failed${status ? ` (HTTP ${status})` : ''}, falling back to NewsAPI:`, e.message);
+    return null;
+  }
+}
+
 async function fetchNews(category, pageSize = 10) {
   // Quoted phrases force exact-phrase matches so a partial word (e.g. "stock"
   // inside a package name like "…-stock-lot") doesn't false-match.
@@ -59,6 +112,9 @@ async function fetchNews(category, pageSize = 10) {
     world: 'geopolitics OR "international relations" OR war OR diplomacy OR sanctions',
     technology: '"artificial intelligence" OR technology OR semiconductor OR cybersecurity',
   };
+  const g = await tryGnews(() => gnewsSearch(queries[category]), `fetchNews(${category})`);
+  if (g) return filterArticles(g).slice(0, pageSize);
+
   trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/everything', {
     params: { q: queries[category], language: 'en', sortBy: 'publishedAt', pageSize: pageSize + 12, apiKey: NEWS_API_KEY }
@@ -67,6 +123,9 @@ async function fetchNews(category, pageSize = 10) {
 }
 
 async function fetchNewsByKeyword(keyword, pageSize = 5) {
+  const g = await tryGnews(() => gnewsSearch(keyword), 'fetchNewsByKeyword');
+  if (g) return filterArticles(g).slice(0, pageSize);
+
   trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/everything', {
     params: { q: keyword, language: 'en', sortBy: 'publishedAt', pageSize: pageSize + 10, apiKey: NEWS_API_KEY }
@@ -75,6 +134,9 @@ async function fetchNewsByKeyword(keyword, pageSize = 5) {
 }
 
 async function fetchNewsByCountry(country, pageSize = 5) {
+  const g = await tryGnews(() => gnewsHeadlines({ category: 'general', country }), `fetchNewsByCountry(${country})`);
+  if (g) return filterArticles(g).slice(0, pageSize);
+
   trackApiCall();
   const response = await axios.get('https://newsapi.org/v2/top-headlines', {
     params: { country, pageSize: pageSize + 10, apiKey: NEWS_API_KEY }
@@ -97,26 +159,42 @@ async function fetchNewsByCountry(country, pageSize = 5) {
 // for topic ideas, and skipping it avoids a heavy Groq call right before those
 // features' own Groq call, which was tripping the rate limit → fallbacks.
 async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysAgo = 2, aiFilter = true) {
-  trackApiCall();
-  const from = new Date(Date.now() - fromDaysAgo * 86400000).toISOString().slice(0, 10);
-  const response = await axios.get('https://newsapi.org/v2/everything', {
-    params: {
-      // Quoted multi-word phrases → exact matches, so partial words don't
-      // false-match (e.g. "stock" inside an unrelated package name).
-      q: '"stock market" OR geopolitics OR "artificial intelligence" OR economy',
-      language: 'en',
-      sortBy,
-      from,
-      // Over-fetch so enough remain after blocked-domain + deals + fluff
-      // filtering and the AI relevance pass below.
-      pageSize: Math.min(pageSize + 20, 100),
-      apiKey: NEWS_API_KEY
-    }
-  });
-  // Cheap filters first (blocklist + deals + obvious fluff), then optionally
-  // an AI relevance pass to drop subtler off-topic fluff from legit outlets
-  // (best-effort — returns everything if Groq is unavailable), then trim.
-  const clean = filterArticles(response.data.articles);
+  const q = '"stock market" OR geopolitics OR "artificial intelligence" OR economy';
+
+  // GNews primary (real-time). Its free tier has no "popularity" sort, so map
+  // popularity → relevance and publishedAt → publishedAt. `from` is a full ISO
+  // datetime here (GNews wants time, not just a date). GNews returns up to 10,
+  // so we don't over-fetch as we do for NewsAPI.
+  const fromIso = new Date(Date.now() - fromDaysAgo * 86400000).toISOString();
+  const gnewsSort = sortBy === 'popularity' ? 'relevance' : 'publishedAt';
+  let clean = null;
+  const g = await tryGnews(() => gnewsSearch(q, { sortby: gnewsSort, from: fromIso }), 'fetchCombinedNews');
+  if (g) clean = filterArticles(g);
+
+  if (!clean) {
+    // NewsAPI fallback. NewsAPI's `from` is a date (YYYY-MM-DD). Over-fetch so
+    // enough remain after blocked-domain + deals + fluff filtering and the AI
+    // relevance pass below.
+    trackApiCall();
+    const from = fromIso.slice(0, 10);
+    const response = await axios.get('https://newsapi.org/v2/everything', {
+      params: {
+        // Quoted multi-word phrases → exact matches, so partial words don't
+        // false-match (e.g. "stock" inside an unrelated package name).
+        q,
+        language: 'en',
+        sortBy,
+        from,
+        pageSize: Math.min(pageSize + 20, 100),
+        apiKey: NEWS_API_KEY
+      }
+    });
+    clean = filterArticles(response.data.articles);
+  }
+
+  // Optionally run an AI relevance pass to drop subtler off-topic fluff from
+  // legit outlets (best-effort — returns everything if Groq is unavailable),
+  // then trim.
   const relevant = aiFilter ? await filterRelevantNews(clean) : clean;
   return relevant.slice(0, pageSize);
 }

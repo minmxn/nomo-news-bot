@@ -12,6 +12,7 @@ const CHAT_IDS = (CHAT_ID || '')
   .filter(Boolean)
   .filter((v, i, a) => a.indexOf(v) === i);
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
+const GNEWS_API_KEY = process.env.GNEWS_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
@@ -26,6 +27,7 @@ const REQUIRED = {
   NEWS_API_KEY: 'newsapi.org API key — without it no news can be fetched.',
 };
 const RECOMMENDED = {
+  GNEWS_API_KEY: 'GNews API key — the primary (real-time) news source. Without it the bot falls back to NewsAPI (free tier ~24h delayed).',
   GROQ_API_KEY: 'Groq API key — without it AI briefings, summaries, polls and quizzes are skipped.',
   CHAT_ID: 'Target chat/channel id — without it scheduled posts have nowhere to go.',
   TAVILY_API_KEY: 'Tavily search key — without it the free-text Q&A can\'t fetch live web info and will only answer from (stale) model knowledge.',
@@ -46,4 +48,4 @@ if (missingRequired.length) {
   process.exit(1);
 }
 
-module.exports = { TZ, BOT_USERNAME, CHAT_ID, CHAT_IDS, NEWS_API_KEY, GROQ_API_KEY, TELEGRAM_TOKEN, ADMIN_ID, TAVILY_API_KEY };
+module.exports = { TZ, BOT_USERNAME, CHAT_ID, CHAT_IDS, NEWS_API_KEY, GNEWS_API_KEY, GROQ_API_KEY, TELEGRAM_TOKEN, ADMIN_ID, TAVILY_API_KEY };
