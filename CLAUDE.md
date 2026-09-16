@@ -62,7 +62,7 @@ Validated at startup in [config.js](config.js) — the process exits with a clea
 | `NEWS_API_KEY` | ✅ | newsapi.org key |
 | `GROQ_API_KEY` | recommended | AI features; degrade gracefully if absent |
 | `TAVILY_API_KEY` | recommended | Tavily (tavily.com) web-search key. Powers the live-web grounding for the free-text Q&A so it answers current questions from real sources instead of stale model memory. Without it the Q&A still works but only from the model's training (and says "can't confirm" on recent topics). Free tier ~1,000 searches/mo |
-| `CHAT_ID` | recommended | Target chat/channel for scheduled posts |
+| `CHAT_ID` | recommended | Target chat(s)/channel(s) for scheduled posts. Accepts a **comma-separated list** to broadcast every scheduled post to multiple chats (e.g. a private group + a public channel): `CHAT_ID=-100123...,@NomoNewsClub`. A public chat can be referenced by its `@username`; private ones need the numeric `-100…` id. Config parses this into `CHAT_IDS` (trimmed, de-duplicated); a single id still works unchanged. The bot must be an admin with post rights in each target |
 | `BOT_USERNAME` | optional | Defaults to `nomogh_bot` (used for group mention/reply detection) |
 | `READER_STORE` | optional | Path for persisted reader sessions; point at a persistent volume (e.g. `/data/reader-sessions.json`) to survive redeploys |
 | `MEMORY_STORE` | optional | Path for persisted per-user chat memory; point at a persistent volume to survive redeploys |
@@ -115,7 +115,9 @@ bot.js
 ### Data flow (scheduled post)
 
 `cron fires → news.js fetchCombinedNews() (1 NewsAPI call, blocked domains filtered)
-→ groq.js summarizes/builds content → bot sends to CHAT_ID`.
+→ groq.js summarizes/builds content → bot broadcasts to every chat in CHAT_IDS`.
+
+News is fetched **once per slot** and the same articles are shared across all target chats, so adding chats doesn't multiply NewsAPI/Groq usage. Each chat's send is isolated (via the `broadcast()` helper in [scheduler.js](src/scheduler.js)) — a failure to one target is logged and skipped, the rest still post.
 
 ### Key registrars
 

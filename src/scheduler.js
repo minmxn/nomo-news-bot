@@ -1,9 +1,8 @@
 const cron = require('node-cron');
-const { TZ, CHAT_ID, ADMIN_ID } = require('../config');
+const { TZ, CHAT_IDS, ADMIN_ID } = require('../config');
 const { fetchCombinedNews } = require('./news');
-const { askGroq, generateMCQSet, generatePoll } = require('./groq');
+const { askGroq, generateMCQSet } = require('./groq');
 const { startReader } = require('./reader');
-const { dailyPolls } = require('../data/polls');
 const { mcqQuestions, mcqState } = require('../data/mcq');
 const mcqHistory = require('./mcqHistory');
 
@@ -30,7 +29,6 @@ const scheduleText =
 🌅 *MORNING*
 ━━━━━━━━━━━━━━━━━━━━━
 ☀️  8:00am — Morning Briefing
-🗳️  9:00am — Daily Poll
 🧠 10:00am — Daily MCQ Quiz
 ✅ 11:00am — MCQ Answer Revealed
 
@@ -44,6 +42,20 @@ const scheduleText =
 
 ━━━━━━━━━━━━━━━━━━━━━
 _BUILT BY MIN_ ⚡`;
+
+// ─── BROADCAST HELPER ─────────────────────────────────────────────
+// Runs a per-chat post function for every configured target chat (private
+// group + any public group/channel). Failures are isolated per chat so one
+// broken target (bot kicked, chat deleted, etc.) never blocks the others.
+async function broadcast(fn) {
+  for (const chatId of CHAT_IDS) {
+    try {
+      await fn(chatId);
+    } catch (err) {
+      console.error(`Broadcast to ${chatId} failed:`, err.message);
+    }
+  }
+}
 
 // ─── MCQ FALLBACK ─────────────────────────────────────────────────
 // Picks one Easy, one Medium and one Hard question from the hardcoded set.
@@ -125,9 +137,14 @@ async function postMCQAnswers(bot, chatId, mcqs) {
 // ─── NEWS UPDATE HELPER (posts the swipeable story reader) ────────
 
 async function postNewsUpdate(bot, label) {
-  await bot.sendMessage(CHAT_ID, `${label}\n\n_Tap through the latest stories_ 👇`, { parse_mode: 'Markdown' });
+  // Fetch once and share the same articles across all target chats so
+  // broadcasting doesn't multiply NewsAPI/Groq calls per chat.
   // Timed updates show the newest stories, not the most "significant" ones.
-  await startReader(bot, CHAT_ID, { silent: true, sortBy: 'publishedAt' });
+  const articles = await fetchCombinedNews(15, 'publishedAt');
+  await broadcast(async (chatId) => {
+    await bot.sendMessage(chatId, `${label}\n\n_Tap through the latest stories_ 👇`, { parse_mode: 'Markdown' });
+    await startReader(bot, chatId, { silent: true, sortBy: 'publishedAt', articles });
+  });
 }
 
 // ─── SCHEDULER ────────────────────────────────────────────────────
@@ -137,11 +154,10 @@ function registerScheduler(bot) {
 
   // API call budget per day (100 limit on free tier):
   //   8am briefing:        1 (fetchCombinedNews)
-  //   9am poll:            1 (fetchCombinedNews — for AI poll context)
   //   10am MCQ:            1 (fetchCombinedNews — for AI quiz context)
   //   6pm evening carousel: 1 (fetchCombinedNews via startReader)
   //   3x reader updates:   1 each = 3 (fetchCombinedNews via startReader — 12pm, 3pm, 8pm)
-  //   Total scheduled: ~7/day — leaves ~90 calls for user commands
+  //   Total scheduled: ~6/day — leaves ~90 calls for user commands
 
   // 8:00am SGT — Morning briefing (AI summary only)
   cron.schedule('0 8 * * *', async () => {
@@ -149,34 +165,9 @@ function registerScheduler(bot) {
       const allArticles = await fetchCombinedNews(15, 'popularity', 2, false);
       const allNews = allArticles.map(a => a.title).join('\n');
       const summary = await askGroq('Give me a short friendly morning briefing. Simple, clear and easy to understand.', allNews);
-      await bot.sendMessage(CHAT_ID, `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' });
+      await broadcast((chatId) => bot.sendMessage(chatId, `☀️ *Good Morning! Your Daily Briefing*\n\n${summary}\n\n_BUILT BY MIN_ ⚡`, { parse_mode: 'Markdown' }));
     } catch (err) {
       console.error('Morning briefing error:', err.message);
-    }
-  }, cronOpts);
-
-  // 9:00am SGT — Daily poll (+ weekly question on Mondays)
-  // Tries to generate a fresh poll from today's headlines via Groq;
-  // falls back silently to the hardcoded daily poll if Groq is down/slow.
-  cron.schedule('0 9 * * *', async () => {
-    try {
-      const day = new Date().toLocaleString('en-US', { weekday: 'short', timeZone: TZ });
-      const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-      const d = dayMap[day];
-
-      let poll;
-      try {
-        const articles = await fetchCombinedNews(15, 'popularity', 2, false);
-        const headlines = articles.map(a => a.title).join('\n');
-        poll = await generatePoll(headlines);
-      } catch (genErr) {
-        console.error('AI poll generation failed, using fallback:', genErr.message);
-        poll = dailyPolls[d];
-      }
-
-      await bot.sendPoll(CHAT_ID, poll.question, poll.options, { is_anonymous: false });
-    } catch (err) {
-      console.error('Daily poll error:', err.message);
     }
   }, cronOpts);
 
@@ -201,7 +192,7 @@ function registerScheduler(bot) {
         mcqState.currentMCQs = fallbackMCQSet();
       }
 
-      await sendMCQText(bot, CHAT_ID, mcqState.currentMCQs);
+      await broadcast((chatId) => sendMCQText(bot, chatId, mcqState.currentMCQs));
     } catch (err) {
       console.error('MCQ error:', err.message);
     }
@@ -212,8 +203,10 @@ function registerScheduler(bot) {
     try {
       if (!mcqState.currentMCQs || mcqState.currentMCQs.length === 0) return;
       // Duo-style guilt trip before the answers drop.
-      await bot.sendMessage(CHAT_ID, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
-      await postMCQAnswers(bot, CHAT_ID, mcqState.currentMCQs);
+      await broadcast(async (chatId) => {
+        await bot.sendMessage(chatId, pickGuiltTrip(), { parse_mode: 'MarkdownV2' });
+        await postMCQAnswers(bot, chatId, mcqState.currentMCQs);
+      });
     } catch (err) {
       console.error('MCQ answer error:', err.message);
     }
@@ -224,8 +217,12 @@ function registerScheduler(bot) {
   // sort so it leads with the day's most significant stories.
   cron.schedule('0 18 * * *', async () => {
     try {
-      await bot.sendMessage(CHAT_ID, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
-      await startReader(bot, CHAT_ID, { silent: true });
+      // Fetch once (default popularity sort) and share across all target chats.
+      const articles = await fetchCombinedNews(10, 'popularity');
+      await broadcast(async (chatId) => {
+        await bot.sendMessage(chatId, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
+        await startReader(bot, chatId, { silent: true, articles });
+      });
     } catch (err) {
       console.error('Evening news error:', err.message);
     }
