@@ -5,3 +5,4 @@ chat-memory.json
 blocked-domains.json
 mcq-history.json
 .claude/
+.env.save*
