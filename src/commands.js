@@ -11,12 +11,22 @@ const blocklist = require('./blocklist');
 function registerCommands(bot) {
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id,
-      `👋 Hey welcome to Nomo News Bot!\n\n` +
-      `📰 Nomo — No More Information Overload. Know More in Minutes.\n\n` +
+      `👋 *Welcome to Nomo News Bot!*\n` +
+      `📰 Nomo = No More Information Overload. Know More in Minutes.\n` +
       `BUILT BY MIN ⚡\n\n` +
-      `Your personal AI news analyst — tap a button or ask me anything! 📰🤖\n\n` +
-      `In a group just mention me with @${BOT_USERNAME} and ask away! 😎`,
-      { reply_markup: mainKeyboard }
+      `I'm your personal AI news analyst. Here's how to use me:\n\n` +
+      `*1. Tap a button* (menu below 👇)\n` +
+      `📈 Markets · 🌍 World · 💻 Tech for headlines\n` +
+      `☀️ Briefing for a quick AI summary of the day\n` +
+      `📖 Read for a swipeable news deck\n` +
+      `📊 Stock to check a ticker · 🔍 Search any topic\n` +
+      `🌏 SG · 🇺🇸 US · 🇨🇳 China for regional news\n\n` +
+      `*2. Just ask me anything*\n` +
+      `Type in plain English, like _"what's going on with Nvidia?"_ or _"explain the US rate cut"_. I pull live info and answer straight.\n\n` +
+      `*3. I post daily on a schedule*\n` +
+      `Morning briefing, a daily quiz, and news decks through the day. Tap 📅 Schedule to see the full lineup.\n\n` +
+      `👥 In a group? Just mention me with @${BOT_USERNAME} and ask away. 😎`,
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   });
 
