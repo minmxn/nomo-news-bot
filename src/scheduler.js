@@ -136,13 +136,12 @@ async function postMCQAnswers(bot, chatId, mcqs) {
 
 // ─── NEWS UPDATE HELPER (posts the swipeable story reader) ────────
 
-async function postNewsUpdate(bot, label) {
+async function postNewsUpdate(bot) {
   // Fetch once and share the same articles across all target chats so
   // broadcasting doesn't multiply NewsAPI/Groq calls per chat.
   // Timed updates show the newest stories, not the most "significant" ones.
   const articles = await fetchCombinedNews(15, 'publishedAt');
   await broadcast(async (chatId) => {
-    await bot.sendMessage(chatId, `${label}\n\n_Tap through the latest stories_ 👇`, { parse_mode: 'Markdown' });
     await startReader(bot, chatId, { silent: true, sortBy: 'publishedAt', articles });
   });
 }
@@ -229,7 +228,6 @@ function registerScheduler(bot) {
       // Fetch once (default popularity sort) and share across all target chats.
       const articles = await fetchCombinedNews(10, 'popularity');
       await broadcast(async (chatId) => {
-        await bot.sendMessage(chatId, '🌆 *Evening Top News* — tap through today\'s top stories 👇', { parse_mode: 'Markdown' });
         await startReader(bot, chatId, { silent: true, articles });
       });
     } catch (err) {
@@ -248,21 +246,18 @@ function registerScheduler(bot) {
       return bot.sendMessage(chatId, '🔒 Only the admin can run /testquiz.');
     }
     bot.sendChatAction(chatId, 'typing').catch(() => {});
-    let mcqs, source;
+    let mcqs;
     try {
       // Same fetch as the 10am cron (aiFilter off, 25 headlines — just need
       // topic material, kept small to stay under Groq's per-minute limit).
       const articles = await fetchCombinedNews(25, 'publishedAt', 2, false);
       const headlines = articles.map(a => a.title).join('\n');
       mcqs = await generateMCQSet(headlines, mcqHistory.recent());
-      source = '🤖 AI-generated from today’s headlines';
     } catch (e) {
       console.error('testquiz generation failed, using fallback:', e.message);
       mcqs = fallbackMCQSet();
-      source = `⚠️ AI generation failed (${e.response ? 'HTTP ' + e.response.status : e.message}) — showing hardcoded fallback`;
     }
     try {
-      await bot.sendMessage(chatId, `🧪 *Test Quiz*\n_${source}_`, { parse_mode: 'Markdown' });
       await sendMCQText(bot, chatId, mcqs);
       await bot.sendMessage(chatId, pickGuiltTrip());
       await postMCQAnswers(bot, chatId, mcqs);
@@ -273,9 +268,9 @@ function registerScheduler(bot) {
   });
 
   // News updates at fixed SGT times: 12pm, 3pm, 8pm, 10pm
-  cron.schedule('0 12 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 12pm*').catch(e => console.error(e.message)), cronOpts);
-  cron.schedule('0 15 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 3pm*').catch(e => console.error(e.message)), cronOpts);
-  cron.schedule('0 20 * * *', () => postNewsUpdate(bot, '🔔 *News Update — 8pm*').catch(e => console.error(e.message)), cronOpts);
+  cron.schedule('0 12 * * *', () => postNewsUpdate(bot).catch(e => console.error(e.message)), cronOpts);
+  cron.schedule('0 15 * * *', () => postNewsUpdate(bot).catch(e => console.error(e.message)), cronOpts);
+  cron.schedule('0 20 * * *', () => postNewsUpdate(bot).catch(e => console.error(e.message)), cronOpts);
 }
 
 module.exports = { registerScheduler, mainKeyboard, scheduleText };
