@@ -8,7 +8,12 @@ const { truncate, cleanSourceName } = require('./helpers');
 // Fallback image Telegram can fetch when an article has no usable photo.
 const PLACEHOLDER = 'https://placehold.co/1024x576/1a1a2e/FFD700.png?text=NOMO+NEWS';
 const STORY_COUNT = 10;
-const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+// Sessions never expire by time — old carousels stay tappable forever. Set to a
+// finite number of ms if you ever want cards to auto-expire again.
+const SESSION_TTL = Infinity;
+// Safety cap so sessions don't grow unbounded: keep only the newest N carousels.
+// Oldest are evicted once this many exist. Bump higher if you want more history.
+const MAX_SESSIONS = 500;
 
 // Where sessions are persisted. Set READER_STORE to a persistent volume path
 // (e.g. /data/reader-sessions.json) so sessions also survive redeploys.
@@ -58,6 +63,14 @@ function pruneSessions() {
   let removed = false;
   for (const [sid, s] of sessions) {
     if (now - s.createdAt > SESSION_TTL) { sessions.delete(sid); removed = true; }
+  }
+  // Enforce the count cap: drop the oldest carousels beyond MAX_SESSIONS.
+  if (sessions.size > MAX_SESSIONS) {
+    const ordered = [...sessions.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+    for (const [sid] of ordered.slice(0, sessions.size - MAX_SESSIONS)) {
+      sessions.delete(sid);
+      removed = true;
+    }
   }
   if (removed) saveSessions();
 }
@@ -180,7 +193,7 @@ function registerReader(bot) {
     const [, action, sid] = data.split(':');
     const s = sessions.get(sid);
     if (!s) {
-      bot.answerCallbackQuery(q.id, { text: 'This reader expired — send /read again.' });
+      bot.answerCallbackQuery(q.id, { text: "Couldn't find this reader — send /read for fresh news." });
       return;
     }
 
