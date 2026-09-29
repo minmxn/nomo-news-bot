@@ -159,7 +159,9 @@ async function fetchNewsByCountry(country, pageSize = 5) {
 // for topic ideas, and skipping it avoids a heavy Groq call right before those
 // features' own Groq call, which was tripping the rate limit → fallbacks.
 async function fetchCombinedNews(pageSize = 15, sortBy = 'popularity', fromDaysAgo = 2, aiFilter = true) {
-  const q = '"stock market" OR geopolitics OR "artificial intelligence" OR economy';
+  // The channel's topics of interest: AI, tech, semiconductors, markets/stocks.
+  // Edit this list to re-focus every scheduled post, /read and the briefing.
+  const q = '"artificial intelligence" OR AI OR technology OR tech OR semiconductor OR semiconductors OR chips OR "stock market" OR stocks OR markets';
 
   // GNews primary (real-time). Its free tier has no "popularity" sort, so map
   // popularity → relevance and publishedAt → publishedAt. `from` is a full ISO
