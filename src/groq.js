@@ -348,8 +348,8 @@ Provide exactly ${articles.length} summaries.`;
 async function filterRelevantNews(articles) {
   if (!GROQ_API_KEY || !Array.isArray(articles) || articles.length === 0) return articles;
   const list = articles.map((a, i) => `${i + 1}. ${a.title || ''}`).join('\n');
-  const prompt = `You are the editor of a news channel focused on AI, technology, semiconductors, and stock markets. Below are ${articles.length} numbered headlines. For EACH one, decide if it is GENUINE hard news about one of those topics: AI / artificial intelligence, technology and tech companies, semiconductors and chips, or stock markets, stocks and investing.
-Mark it false if it is off-topic (e.g. general politics, crime, or world affairs with no clear link to tech or markets), or if it is: lifestyle, a personal essay ("I moved to…", "I tried…"), travel, food/recipes, shopping/deals, a product roundup, an "N things/tips/ways" listicle, human-interest fluff, celebrity, sports, a horoscope, an opinion/blog post, or a how-to guide.
+  const prompt = `You are the editor of a news channel focused on AI, technology, semiconductors, stock markets and geopolitics. Below are ${articles.length} numbered headlines. For EACH one, decide if it is GENUINE hard news about one of those topics: AI / artificial intelligence, technology and tech companies, semiconductors and chips, stock markets, stocks and investing, or geopolitics (relations between countries, conflicts, sanctions, trade wars, diplomacy).
+Mark it false if it is off-topic (e.g. local politics, crime, or domestic stories with no clear link to these topics), or if it is: lifestyle, a personal essay ("I moved to…", "I tried…"), travel, food/recipes, shopping/deals, a product roundup, an "N things/tips/ways" listicle, human-interest fluff, celebrity, sports, a horoscope, an opinion/blog post, or a how-to guide.
 Headlines:
 ${list}
 Respond ONLY with JSON containing a "news" array of EXACTLY ${articles.length} booleans, in the same order (true = keep as news, false = drop):
