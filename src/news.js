@@ -47,8 +47,57 @@ function isFluff(a) {
 // via /block and /unblock (see blocklist.js). Subtler off-topic fluff is caught
 // later by the AI relevance filter (see fetchCombinedNews).
 function filterArticles(articles) {
-  return (articles || []).filter(a =>
-    a && a.url && !isBlocked(a.url) && !isCommercialDeal(a) && !isFluff(a));
+  return dedupeArticles((articles || []).filter(a =>
+    a && a.url && !isBlocked(a.url) && !isCommercialDeal(a) && !isFluff(a)));
+}
+
+// --- De-duplication -----------------------------------------------------------
+// The same story often comes back more than once: the exact URL with different
+// tracking params, or one wire story (Reuters/AP) syndicated by several outlets
+// under a near-identical headline ("Fed holds rates - Reuters" vs "Fed holds
+// rates | Yahoo Finance"). Keep the first (highest-ranked) copy of each.
+
+// URL minus protocol, "www.", query string, hash and trailing slash.
+function urlKey(url) {
+  try {
+    const u = new URL(url);
+    return (u.hostname.replace(/^www\./, '') + u.pathname.replace(/\/+$/, '')).toLowerCase();
+  } catch {
+    return String(url).toLowerCase();
+  }
+}
+
+// Headline words, with a trailing " - Source" / " | Source" suffix stripped.
+function titleWords(title) {
+  return String(title || '')
+    .replace(/\s+[-–—|]\s+[^-–—|]{1,40}$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2);
+}
+
+// Jaccard overlap of two word lists (0..1).
+function similarity(a, b) {
+  if (!a.length || !b.length) return 0;
+  const A = new Set(a), B = new Set(b);
+  let shared = 0;
+  for (const w of A) if (B.has(w)) shared++;
+  return shared / (A.size + B.size - shared);
+}
+
+function dedupeArticles(articles) {
+  const seenUrls = new Set();
+  const kept = [];
+  for (const a of articles) {
+    const key = urlKey(a.url);
+    if (seenUrls.has(key)) continue;
+    const words = titleWords(a.title);
+    if (kept.some(k => similarity(k.words, words) >= 0.8)) continue;
+    seenUrls.add(key);
+    kept.push({ a, words });
+  }
+  return kept.map(k => k.a);
 }
 
 // --- GNews (primary, real-time source) -------------------------------------
